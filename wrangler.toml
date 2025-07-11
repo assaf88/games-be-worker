@@ -7,4 +7,4 @@ bindings = [{ name = "PARTY_STATE", class_name = "PartyState" }]
 
 [[migrations]]
 tag = "v1"
-new_classes = [ "PartyState" ]
+new_sqlite_classes = [ "PartyState" ]
