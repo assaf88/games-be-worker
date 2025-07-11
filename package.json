@@ -1,0 +1,24 @@
+{
+	"name": "falling-cell-3243",
+	"version": "0.0.0",
+	"private": true,
+	"scripts": {
+		"deploy": "wrangler deploy",
+		"deploy:prod": "wrangler deploy --env production",
+		"dev": "wrangler dev",
+		"dev:local": "wrangler dev --local",
+		"start": "wrangler dev",
+		"test": "vitest",
+		"cf-typegen": "wrangler types"
+	},
+	"dependencies": {
+		"ws": "^8.16.0"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20250709.0",
+		"@cloudflare/vitest-pool-workers": "^0.8.19",
+		"typescript": "^5.5.2",
+		"vitest": "~3.2.0",
+		"wrangler": "^4.24.3"
+	}
+}
