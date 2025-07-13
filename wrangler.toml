@@ -11,3 +11,8 @@ bindings = [{ name = "PARTY_STATE", class_name = "PartyState" }]
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = [ "PartyState" ]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "web-games-d1-db-wu"
+database_id = "5ad83906-a7bd-4fee-bef8-c19195b6f984"
