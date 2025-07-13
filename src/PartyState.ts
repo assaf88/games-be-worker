@@ -61,6 +61,16 @@ export class PartyState {
   async fetch(request: Request): Promise<Response> {
     if (request.headers.get('upgrade') === 'websocket') {
       const { 0: client, 1: server } = new WebSocketPair();
+      // Only allow connection if gameState exists in storage
+      if (!this.gameState) {
+        const stored = await this.state.storage.get<GameState>('gameState');
+        if (stored) {
+          this.gameState = stored;
+        } else {
+          // Party does not exist, block connection
+          return new Response('Party not found', { status: 404 });
+        }
+      }
       server.accept();
 
       // Load or initialize game state
