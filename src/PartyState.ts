@@ -35,9 +35,19 @@ export class PartyState {
     this.env = env;
   }
 
-  // Helper to upsert game state into D1
+  // upsert game state into D1
   async saveGameStateToD1() {
-    // No-op except for start_game
+    // await this.env.DB.prepare(
+    this.env.DB.prepare(
+      `INSERT INTO games (party_id, game_id, state_json, status, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(party_id) DO UPDATE SET game_id=excluded.game_id, state_json=excluded.state_json, status=excluded.status, updated_at=excluded.updated_at`
+    ).bind(
+      this.gameState.partyId,
+      this.gameState.gameId,
+      JSON.stringify(this.gameState), // hostId/firstHostId are not in gameState
+      'active',
+      new Date().toISOString()
+    ).run();
     return;
   }
 
@@ -57,7 +67,7 @@ export class PartyState {
           this.firstHostId = id;
           this.hostId = id;
           await this.state.storage.put('gameState', this.gameState);
-          await this.saveGameStateToD1();
+          // await this.saveGameStateToD1();
           console.log('Party initialized via /init:', partyId, id, name);
         }
         return new Response('OK', { status: 200 });
@@ -88,6 +98,7 @@ export class PartyState {
           return new Response('Party not found', { status: 404 });
         }
       }
+      
       server.accept();
 
       // Remove backend-generated player id and name
@@ -124,7 +135,6 @@ export class PartyState {
               } else {
                 this.hostId = null;
               }
-              await this.saveGameStateToD1();
             }
 
             if (!this.hostId && player.id) {
@@ -153,16 +163,9 @@ export class PartyState {
             this.gameState.gameStarted = true;
             // Save to DB only on start, and do NOT include hostId/firstHostId in the saved state
             const { hostId, firstHostId, ...stateToSave } = this;
-            await this.env.DB.prepare(
-              `INSERT INTO games (party_id, game_id, state_json, status, updated_at) VALUES (?, ?, ?, ?, ?)
-               ON CONFLICT(party_id) DO UPDATE SET game_id=excluded.game_id, state_json=excluded.state_json, status=excluded.status, updated_at=excluded.updated_at`
-            ).bind(
-              this.gameState.partyId,
-              this.gameState.gameId,
-              JSON.stringify(this.gameState), // hostId/firstHostId are not in gameState
-              'active',
-              new Date().toISOString()
-            ).run();
+            
+            // await this.saveGameStateToD1();
+            this.saveGameStateToD1();
             this.broadcastGameState();
             return;
           }
