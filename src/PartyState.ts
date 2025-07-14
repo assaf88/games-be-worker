@@ -126,6 +126,11 @@ export class PartyState {
               }
               await this.saveGameStateToD1();
             }
+
+            if (!this.hostId && player.id) {
+              this.hostId = player.id;
+            }
+
             // Always send the current state to the registering socket
             server.send(JSON.stringify({ action: 'update_state', ...this.gameState, hostId: this.hostId }));
             // And broadcast to all others
@@ -134,11 +139,12 @@ export class PartyState {
           }
           // Handle ping from client - respond with pong and broadcast state
           if (data.action === 'ping') {
-            server.send(JSON.stringify({ 
-              action: 'pong', 
-              timestamp: Date.now() 
+            server.send(JSON.stringify({
+              action: 'pong',
+              timestamp: Date.now()
             }));
             this.broadcastGameState();
+            //console.log('Current open connections for party', this.gameState?.partyId, ':', Array.from(this.connections.values()).map(p => p.id));
             return;
           }
           // Handle start_game action (only host can start)
