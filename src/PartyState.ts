@@ -37,28 +37,8 @@ export class PartyState {
 
   // Helper to upsert game state into D1
   async saveGameStateToD1() {
-    if (!this.env || !this.env.DB || !this.gameState) {
-      console.error("D1 env or gameState missing", {
-        hasEnv: !!this.env,
-        hasDB: !!(this.env && this.env.DB),
-        hasGameState: !!this.gameState
-      });
-      return;
-    }
-    try {
-      const { gameId, partyId } = this.gameState;
-      const stateJson = JSON.stringify(this.gameState);
-      const status = 'active';
-      const updatedAt = new Date().toISOString();
-      console.log("Attempting to save game state to D1 for party_id:", partyId);
-      await this.env.DB.prepare(
-        `INSERT INTO games (party_id, game_id, state_json, status, updated_at) VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(party_id) DO UPDATE SET game_id=excluded.game_id, state_json=excluded.state_json, status=excluded.status, updated_at=excluded.updated_at`
-      ).bind(partyId, gameId, stateJson, status, updatedAt).run();
-      console.log("Saved game state to D1 for party_id:", partyId);
-    } catch (err) {
-      console.error("Failed to save game state to D1:", err);
-    }
+    // No-op except for start_game
+    return;
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -165,7 +145,18 @@ export class PartyState {
           if (data.action === 'start_game' && player && player.id && player.id === this.hostId) {
             // Set gameStarted: true and broadcast
             this.gameState.gameStarted = true;
-            await this.saveGameStateToD1();
+            // Save to DB only on start, and do NOT include hostId/firstHostId in the saved state
+            const { hostId, firstHostId, ...stateToSave } = this;
+            await this.env.DB.prepare(
+              `INSERT INTO games (party_id, game_id, state_json, status, updated_at) VALUES (?, ?, ?, ?, ?)
+               ON CONFLICT(party_id) DO UPDATE SET game_id=excluded.game_id, state_json=excluded.state_json, status=excluded.status, updated_at=excluded.updated_at`
+            ).bind(
+              this.gameState.partyId,
+              this.gameState.gameId,
+              JSON.stringify(this.gameState), // hostId/firstHostId are not in gameState
+              'active',
+              new Date().toISOString()
+            ).run();
             this.broadcastGameState();
             return;
           }
