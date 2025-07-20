@@ -28,32 +28,29 @@ export default {
 
     // New endpoint: POST /game/create-party
     if (url.pathname === '/game/create-party' && request.method === 'POST') {
-      const start = Date.now();
       const { id, name } = await request.json() as { id: string, name: string };
+      // Generate a unique 4-digit party_id
       let partyId;
       let exists = true;
       let retries = 0;
-      let dbQueryTime = 0;
       while (exists && retries < 5) {
         partyId = (Math.floor(1000 + Math.random() * 9000)).toString();
-        const dbStart = Date.now();
         const result = await env.DB.prepare('SELECT 1 FROM games WHERE party_id = ? LIMIT 1').bind(partyId).first();
-        dbQueryTime += Date.now() - dbStart;
         exists = !!result;
         retries++;
       }
-      console.log(`[create-party] DB query total: ${dbQueryTime}ms, retries: ${retries}`);
       if (exists) {
-        console.log(`[create-party] Could not generate unique party id after ${retries} retries, total time: ${Date.now() - start}ms`);
         return new Response(JSON.stringify({ error: 'Could not generate unique party id' }), { status: 500 });
       }
+      // Create Durable Object and initialize game state
       const idObj = env.PARTY_STATE.idFromName(partyId || '');
       const stub = env.PARTY_STATE.get(idObj);
+      // Send an internal request to initialize the party with the creator
       await stub.fetch('https://internal/init', {
         method: 'POST',
         body: JSON.stringify({ id, name, partyId })
       });
-      console.log(`[create-party] Success. Total handler time: ${Date.now() - start}ms`);
+      // Save to D1 immediately (the Durable Object will handle it)
       return new Response(JSON.stringify({ partyId }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
