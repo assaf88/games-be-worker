@@ -246,11 +246,23 @@ export class PartyState {
           // Handle start_game action (only host can start)
           if (data.action === 'start_game' && player && typeof player.id === 'string' && this.hostId && player.id === this.hostId) {
             if (this.gameState) {
+              // Normalize player order: sort by current order (nulls last), then assign 1..N
+              const sorted = [...this.gameState.players].sort((a, b) => {
+                const ao = typeof a.order === 'number' ? a.order : 9999;
+                const bo = typeof b.order === 'number' ? b.order : 9999;
+                return ao - bo;
+              });
+              let order = 1;
+              for (const p of sorted) {
+                p.order = order++;
+              }
+              // Re-apply sorted order to gameState.players
+              this.gameState.players = sorted;
               this.gameState.gameStarted = true;
               // Save to DB only on start, and do NOT include hostId/firstHostId in the saved state
               const { hostId, firstHostId, ...stateToSave } = this;
               this.saveGameStateToD1();
-              this.broadcastGameState();
+              this.broadcastGameState({ gameStarting: true });
             }
             return;
           }
@@ -304,9 +316,11 @@ export class PartyState {
     return new Response('Expected websocket', { status: 400 });
   }
 
-  broadcastGameState() {
+  broadcastGameState(options: { gameStarting?: boolean } = {}) {
     if (!this.gameState) return;
-    const msg = JSON.stringify({ action: 'update_state', ...this.gameState, hostId: this.hostId });
+    const state = { action: 'update_state', ...this.gameState, hostId: this.hostId };
+    if (options.gameStarting) state.gameStarting = true;
+    const msg = JSON.stringify(state);
     for (const ws of this.connections.keys()) {
       if (ws.readyState === 1) {
         ws.send(msg);
