@@ -29,17 +29,18 @@ export default {
     // New endpoint: POST /game/create-party
     if (url.pathname === '/game/create-party' && request.method === 'POST') {
       const { id, name } = await request.json() as { id: string, name: string };
+      // Fetch all existing party_ids in one query
+      const allIdsResult = await env.DB.prepare('SELECT party_id FROM games').all();
+      const existingIds = new Set((allIdsResult.results || []).map((row: any) => row.party_id));
       // Generate a unique 4-digit party_id
       let partyId;
-      let exists = true;
-      let retries = 0;
-      while (exists && retries < 5) {
+      let attempts = 0;
+      const maxAttempts = 20;
+      do {
         partyId = (Math.floor(1000 + Math.random() * 9000)).toString();
-        const result = await env.DB.prepare('SELECT 1 FROM games WHERE party_id = ? LIMIT 1').bind(partyId).first();
-        exists = !!result;
-        retries++;
-      }
-      if (exists) {
+        attempts++;
+      } while (existingIds.has(partyId) && attempts < maxAttempts);
+      if (existingIds.has(partyId)) {
         return new Response(JSON.stringify({ error: 'Could not generate unique party id' }), { status: 500 });
       }
       // Create Durable Object and initialize game state

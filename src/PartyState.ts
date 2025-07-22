@@ -106,27 +106,35 @@ export class PartyState {
       let player: Player | null = null;
       server.addEventListener('message', async (event) => {
         try {
-          const data = JSON.parse(event.data as string);
+          let data: any = {};
+          if (typeof event.data === 'string') {
+            try {
+              data = JSON.parse(event.data);
+            } catch {}
+          }
           // Handle register action
-          if (data.action === 'register' && data.id && data.name) {
+          if (data.action === 'register' && typeof data.id === 'string' && typeof data.name === 'string') {
             // If gameState does not exist, initialize it now
             if (!this.gameState) {
               const url = new URL(request.url);
               const match = url.pathname.match(/party\/(\w+)/);
-              const partyId = match ? match[1] : 'unknown';
+              const partyId = match && match[1] ? match[1] : 'unknown';
               this.gameState = {
                 gameId: 'avalon',
                 partyId,
-                players: []
+                players: [],
+                gameStarted: false
               };
             }
             // Always add the connection to the map
             player = { id: data.id, name: data.name };
             this.connections.set(server, player);
             // Only add player if not already present
-            if (!this.gameState.players.some(p => p.id === data.id)) {
+            let stateChanged = false;
+            if (this.gameState && !this.gameState.players.some(p => p.id === data.id)) {
               this.gameState.players.push(player);
               await this.state.storage.put('gameState', this.gameState);
+              stateChanged = true;
               if (!this.firstHostId) this.firstHostId = player.id;
               if (this.firstHostId && this.gameState.players.some(p => p.id === this.firstHostId)) {
                 this.hostId = this.firstHostId;
@@ -136,40 +144,36 @@ export class PartyState {
                 this.hostId = null;
               }
             }
-
-            if (!this.hostId && player.id) {
+            if (!this.hostId && player && player.id) {
               this.hostId = player.id;
             }
-
-            // Always send the current state to the registering socket
-            server.send(JSON.stringify({ action: 'update_state', ...this.gameState, hostId: this.hostId }));
-            // And broadcast to all others
-            this.broadcastGameState();
+            // Only broadcast if state changed (player joined)
+            if (stateChanged) {
+              this.broadcastGameState();
+            }
             return;
           }
-          // Handle ping from client - respond with pong and broadcast state
+          // Handle ping from client - respond with pong only
           if (data.action === 'ping') {
             server.send(JSON.stringify({
               action: 'pong',
               timestamp: Date.now()
             }));
-            this.broadcastGameState();
-            //console.log('Current open connections for party', this.gameState?.partyId, ':', Array.from(this.connections.values()).map(p => p.id));
+            // Do NOT broadcast state on ping
             return;
           }
           // Handle start_game action (only host can start)
-          if (data.action === 'start_game' && player && player.id && player.id === this.hostId) {
-            // Set gameStarted: true and broadcast
-            this.gameState.gameStarted = true;
-            // Save to DB only on start, and do NOT include hostId/firstHostId in the saved state
-            const { hostId, firstHostId, ...stateToSave } = this;
-            
-            // await this.saveGameStateToD1();
-            this.saveGameStateToD1();
-            this.broadcastGameState();
+          if (data.action === 'start_game' && player && typeof player.id === 'string' && this.hostId && player.id === this.hostId) {
+            if (this.gameState) {
+              this.gameState.gameStarted = true;
+              // Save to DB only on start, and do NOT include hostId/firstHostId in the saved state
+              const { hostId, firstHostId, ...stateToSave } = this;
+              this.saveGameStateToD1();
+              this.broadcastGameState();
+            }
             return;
           }
-          // For now, just broadcast state on any message
+          // For now, just broadcast state on any message (except ping)
           this.broadcastGameState();
         } catch (error) {
           // Ignore non-JSON messages
