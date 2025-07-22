@@ -1,6 +1,7 @@
 interface Player {
   id: string;
   name: string;
+  order?: number;
 }
 
 interface GameState {
@@ -126,7 +127,13 @@ export class PartyState {
                 gameStarted: false
               };
             }
-            // Always add the connection to the map
+            // Ensure only one active connection per player id
+            for (const [ws, p] of this.connections.entries()) {
+              if (p.id === data.id) {
+                try { ws.close(); } catch {}
+                this.connections.delete(ws);
+              }
+            }
             player = { id: data.id, name: data.name };
             this.connections.set(server, player);
             // Only add player if not already present
@@ -135,12 +142,18 @@ export class PartyState {
               this.gameState.players.push(player);
               await this.state.storage.put('gameState', this.gameState);
               stateChanged = true;
-              if (!this.firstHostId) this.firstHostId = player.id;
+              
+              if (!this.firstHostId) {
+                this.firstHostId = player.id;
+              }
+
               if (this.firstHostId && this.gameState.players.some(p => p.id === this.firstHostId)) {
                 this.hostId = this.firstHostId;
-              } else if (this.gameState.players.length > 0) {
+              } 
+              else if (this.gameState.players.length > 0) {
                 this.hostId = this.gameState.players[0].id;
-              } else {
+              } 
+              else {
                 this.hostId = null;
               }
             }
@@ -169,6 +182,22 @@ export class PartyState {
               // Save to DB only on start, and do NOT include hostId/firstHostId in the saved state
               const { hostId, firstHostId, ...stateToSave } = this;
               this.saveGameStateToD1();
+              this.broadcastGameState();
+            }
+            return;
+          }
+          if (data.action === 'update_order' && Array.isArray(data.players)) {
+            if (this.gameState) {
+              // Update order for each player in gameState.players
+              for (const update of data.players) {
+                const player = this.gameState.players.find(p => p.id === update.id);
+                if (player && typeof update.order === 'number') {
+                  player.order = update.order;
+                }
+              }
+              // Save to storage and DB
+              await this.state.storage.put('gameState', this.gameState);
+              await this.saveGameStateToD1();
               this.broadcastGameState();
             }
             return;
