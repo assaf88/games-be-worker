@@ -118,7 +118,7 @@ export class PartyState {
           this.gameState = {
             gameId: 'avalon',
             partyId,
-            players: [{ id, name, connected: true }],
+            players: [], // Do NOT add host here
             gameStarted: false // Initialize gameStarted
           };
           this.firstHostId = id;
