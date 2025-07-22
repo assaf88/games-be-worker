@@ -2,6 +2,7 @@ interface Player {
   id: string;
   name: string;
   order?: number;
+  connected?: boolean;
 }
 
 interface GameState {
@@ -30,10 +31,65 @@ export class PartyState {
   env: any;
   hostId: string | null = null;
   firstHostId: string | null = null;
+  pingInterval: any;
 
   constructor(state: DurableObjectState, env: any) {
     this.state = state;
     this.env = env;
+    this.startPingInterval();
+  }
+
+  startPingInterval() {
+    if (this.pingInterval) return;
+    this.pingInterval = setInterval(() => {
+      if (!this.gameState) return;
+      let stateChanged = false;
+      for (const player of this.gameState.players) {
+        // If not in connections, mark as disconnected
+        const isConnected = Array.from(this.connections.values()).some(p => p.id === player.id);
+        if (!isConnected) {
+          if (player.connected !== false) {
+            player.connected = false;
+            player.disconnectTime = Date.now();
+            stateChanged = true;
+          }
+        } else {
+          // Send ping to connected player
+          for (const [ws, p] of this.connections.entries()) {
+            if (p.id === player.id) {
+              try { ws.send(JSON.stringify({ action: 'ping' })); } catch {}
+            } 
+          }
+        }
+      }
+      // Remove players who have been disconnected for 60s
+      const removedIds = [];
+      const now = Date.now();
+      const beforePlayers = this.gameState.players.map(p => p.id);
+      this.gameState.players = this.gameState.players.filter(p => {
+        if (p.connected === false && p.disconnectTime && now - p.disconnectTime > 60000) {
+          removedIds.push(p.id);
+          return false;
+        }
+        return true;
+      });
+      if (removedIds.length > 0) {
+        // Remove from connections map as well
+        for (const [ws, p] of this.connections.entries()) {
+          if (removedIds.includes(p.id)) {
+            try { ws.close(); } catch {}
+            this.connections.delete(ws);
+          }
+        }
+        console.log('[REMOVE] Players removed after 60s disconnected:', removedIds);
+        console.log('[REMOVE] Remaining players:', this.gameState.players.map(p => p.id));
+        console.log('[REMOVE] Remaining connections:', Array.from(this.connections.values()).map(p => p.id));
+        stateChanged = true;
+      }
+      if (stateChanged) {
+        this.broadcastGameState();
+      }
+    }, 30000); // Ping every 30s
   }
 
   // upsert game state into D1
@@ -62,12 +118,13 @@ export class PartyState {
           this.gameState = {
             gameId: 'avalon',
             partyId,
-            players: [{ id, name }],
+            players: [{ id, name, connected: true }],
             gameStarted: false // Initialize gameStarted
           };
           this.firstHostId = id;
           this.hostId = id;
           await this.state.storage.put('gameState', this.gameState);
+          console.log('[INIT] firstHostId set to', this.firstHostId);
           // await this.saveGameStateToD1();
           console.log('Party initialized via /init:', partyId, id, name);
         }
@@ -134,7 +191,7 @@ export class PartyState {
                 this.connections.delete(ws);
               }
             }
-            player = { id: data.id, name: data.name };
+            player = { id: data.id, name: data.name, connected: true };
             this.connections.set(server, player);
             // Only add player if not already present
             let stateChanged = false;
@@ -143,19 +200,21 @@ export class PartyState {
               await this.state.storage.put('gameState', this.gameState);
               stateChanged = true;
               
-              if (!this.firstHostId) {
-                this.firstHostId = player.id;
-              }
+              // REMOVE: if (!this.firstHostId) this.firstHostId = player.id;
 
-              if (this.firstHostId && this.gameState.players.some(p => p.id === this.firstHostId)) {
+              // Only set hostId to firstHostId if it is present in players and connections
+              const firstHostPresent = this.gameState.players.some(p => p.id === this.firstHostId);
+              const firstHostConnected = Array.from(this.connections.values()).some(p => p.id === this.firstHostId);
+              if (this.firstHostId && firstHostPresent && firstHostConnected) {
                 this.hostId = this.firstHostId;
-              } 
-              else if (this.gameState.players.length > 0) {
-                this.hostId = this.gameState.players[0].id;
-              } 
-              else {
+              } else if (this.gameState.players.length > 0) {
+                // Pick first connected player as host
+                const connectedPlayer = this.gameState.players.find(p => Array.from(this.connections.values()).some(connP => connP.id === p.id));
+                this.hostId = connectedPlayer ? connectedPlayer.id : null;
+              } else {
                 this.hostId = null;
               }
+              console.log('[HOST ASSIGN] firstHostId:', this.firstHostId, 'hostId:', this.hostId);
             }
             if (!this.hostId && player && player.id) {
               this.hostId = player.id;
@@ -173,6 +232,15 @@ export class PartyState {
               timestamp: Date.now()
             }));
             // Do NOT broadcast state on ping
+            return;
+          }
+          // Handle pong from client
+          if (data.action === 'pong' && player && player.id) {
+            const p = this.gameState.players.find(pl => pl.id === player.id);
+            if (p) {
+              p.connected = true;
+              p.disconnectTime = undefined;
+            }
             return;
           }
           // Handle start_game action (only host can start)
