@@ -68,6 +68,11 @@ export class PartyState {
       const now = Date.now();
       const beforePlayers = this.gameState.players.map(p => p.id);
       this.gameState.players = this.gameState.players.filter(p => {
+        // During an active game, never remove disconnected players
+        if (this.gameState && this.gameState.gameStarted) {
+          return true;
+        }
+        // Only remove if not in an active game
         if (p.connected === false && p.disconnectTime && now - p.disconnectTime > 60000) {
           removedIds.push(p.id);
           return false;
@@ -190,8 +195,18 @@ export class PartyState {
                 gameStarted: false
               };
             }
-            // Prevent joining if game already started
-            if (this.gameState && this.gameState.gameId === 'avalon' && this.gameState.gameStarted) {
+            // Debug logging for reconnect issue
+            console.log('[REGISTER] Incoming player_id:', data.id);
+            if (this.gameState && this.gameState.players) {
+              console.log('[REGISTER] Current players:', this.gameState.players.map(p => p.id));
+            }
+            // Prevent joining if game already started and not in players
+            if (
+              this.gameState &&
+              this.gameState.gameId === 'avalon' &&
+              this.gameState.gameStarted &&
+              !this.gameState.players.some(p => p.id === data.id)
+            ) {
               server.send(JSON.stringify({ action: 'error', reason: 'game_started' }));
               try { server.close(); } catch {}
               return;
@@ -227,6 +242,12 @@ export class PartyState {
                 this.hostId = null;
               }
               console.log('[HOST ASSIGN] firstHostId:', this.firstHostId, 'hostId:', this.hostId);
+            } else {
+              const p = this.gameState.players.find(pl => pl.id === data.id);
+              if (p) {
+                p.connected = true;
+                p.disconnectTime = undefined;
+              }
             }
             if (!this.hostId && player && player.id) {
               this.hostId = player.id;
@@ -303,7 +324,17 @@ export class PartyState {
         const player = this.connections.get(server);
         this.connections.delete(server);
         if (this.gameState && player) {
-          this.gameState.players = this.gameState.players.filter(p => p.id !== player.id);
+          if (this.gameState.gameStarted) {
+            // Just mark as disconnected
+            const p = this.gameState.players.find(p => p.id === player.id);
+            if (p) {
+              p.connected = false;
+              p.disconnectTime = Date.now();
+            }
+          } else {
+            // Only remove if game not started
+            this.gameState.players = this.gameState.players.filter(p => p.id !== player.id);
+          }
           await this.state.storage.put('gameState', this.gameState);
           // If the first host is present, they are always the host
           if (this.firstHostId && this.gameState && this.gameState.players && Array.isArray(this.gameState.players) && this.gameState.players.some(p => p.id === this.firstHostId)) {
