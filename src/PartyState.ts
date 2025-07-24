@@ -3,6 +3,7 @@ interface Player {
   name: string;
   order?: number;
   connected?: boolean;
+  disconnectTime?: number; // Added for linter
 }
 
 interface GameState {
@@ -63,7 +64,7 @@ export class PartyState {
         }
       }
       // Remove players who have been disconnected for 60s
-      const removedIds = [];
+      const removedIds: string[] = [];
       const now = Date.now();
       const beforePlayers = this.gameState.players.map(p => p.id);
       this.gameState.players = this.gameState.players.filter(p => {
@@ -152,8 +153,13 @@ export class PartyState {
         if (stored) {
           this.gameState = stored;
         } else {
-          // Party does not exist, block connection
-          return new Response('Party not found', { status: 404 });
+          // Party does not exist, accept websocket, send error, then close
+          server.accept();
+          try {
+            server.send(JSON.stringify({ action: 'error', reason: 'party_not_found' }));
+          } catch (e) {}
+          try { server.close(); } catch (e) {}
+          return new Response(null, { status: 101, webSocket: client });
         }
       }
       
@@ -162,7 +168,7 @@ export class PartyState {
       // Remove backend-generated player id and name
       // Wait for client to send 'register' message
       let player: Player | null = null;
-      server.addEventListener('message', async (event) => {
+      server.addEventListener('message', async (event: MessageEvent) => {
         try {
           let data: any = {};
           if (typeof event.data === 'string') {
@@ -171,7 +177,7 @@ export class PartyState {
             } catch {}
           }
           // Handle register action
-          if (data.action === 'register' && typeof data.id === 'string' && typeof data.name === 'string') {
+          if (data && data.action === 'register' && typeof data.id === 'string' && typeof data.name === 'string') {
             // If gameState does not exist, initialize it now
             if (!this.gameState) {
               const url = new URL(request.url);
@@ -184,9 +190,15 @@ export class PartyState {
                 gameStarted: false
               };
             }
+            // Prevent joining if game already started
+            if (this.gameState && this.gameState.gameId === 'avalon' && this.gameState.gameStarted) {
+              server.send(JSON.stringify({ action: 'error', reason: 'game_started' }));
+              try { server.close(); } catch {}
+              return;
+            }
             // Ensure only one active connection per player id
             for (const [ws, p] of this.connections.entries()) {
-              if (p.id === data.id) {
+              if (p && data && typeof data.id === 'string' && p.id === data.id) {
                 try { ws.close(); } catch {}
                 this.connections.delete(ws);
               }
@@ -219,14 +231,12 @@ export class PartyState {
             if (!this.hostId && player && player.id) {
               this.hostId = player.id;
             }
-            // Only broadcast if state changed (player joined)
-            if (stateChanged) {
-              this.broadcastGameState();
-            }
+            // Always broadcast state after registration, even if not newly added
+            this.broadcastGameState();
             return;
           }
           // Handle ping from client - respond with pong only
-          if (data.action === 'ping') {
+          if (data && data.action === 'ping') {
             server.send(JSON.stringify({
               action: 'pong',
               timestamp: Date.now()
@@ -235,7 +245,7 @@ export class PartyState {
             return;
           }
           // Handle pong from client
-          if (data.action === 'pong' && player && player.id) {
+          if (data && data.action === 'pong' && player && player.id) {
             const p = this.gameState.players.find(pl => pl.id === player.id);
             if (p) {
               p.connected = true;
@@ -244,7 +254,7 @@ export class PartyState {
             return;
           }
           // Handle start_game action (only host can start)
-          if (data.action === 'start_game' && player && typeof player.id === 'string' && this.hostId && player.id === this.hostId) {
+          if (data && data.action === 'start_game' && player && typeof player.id === 'string' && this.hostId && player.id === this.hostId) {
             if (this.gameState) {
               // Normalize player order: sort by current order (nulls last), then assign 1..N
               const sorted = [...this.gameState.players].sort((a, b) => {
@@ -266,7 +276,7 @@ export class PartyState {
             }
             return;
           }
-          if (data.action === 'update_order' && Array.isArray(data.players)) {
+          if (data && data.action === 'update_order' && Array.isArray(data.players)) {
             if (this.gameState) {
               // Update order for each player in gameState.players
               for (const update of data.players) {
@@ -318,8 +328,8 @@ export class PartyState {
 
   broadcastGameState(options: { gameStarting?: boolean } = {}) {
     if (!this.gameState) return;
-    const state = { action: 'update_state', ...this.gameState, hostId: this.hostId };
-    if (options.gameStarting) state.gameStarting = true;
+    const state: any = { action: 'update_state', ...this.gameState, hostId: this.hostId };
+    if (options.gameStarting) (state as any).gameStarting = true;
     const msg = JSON.stringify(state);
     for (const ws of this.connections.keys()) {
       if (ws.readyState === 1) {
