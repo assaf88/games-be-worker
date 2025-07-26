@@ -108,7 +108,7 @@ export class PartyState {
       `INSERT INTO games (party_id, game_id, state_json, status, updated_at) VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(party_id) DO UPDATE SET game_id=excluded.game_id, state_json=excluded.state_json, status=excluded.status, updated_at=excluded.updated_at`
     ).bind(
-      this.gameState.partyId,
+      this.gameState.partyCode,
       this.gameState.gameId,
       JSON.stringify(this.gameState), // hostId/firstHostId are not in gameState
       'active',
@@ -122,11 +122,11 @@ export class PartyState {
     if (request.method === 'POST' && url.pathname === '/init') {
       // Internal initialization request
       try {
-        const { id, name, partyId } = await request.json();
+        const { id, name, partyCode } = await request.json();
         if (!this.gameState) {
           this.gameState = {
             gameId: 'avalon',
-            partyId,
+            partyCode,
             players: [], // Do NOT add host here
             gameStarted: false // Initialize gameStarted
           };
@@ -135,7 +135,7 @@ export class PartyState {
           await this.state.storage.put('gameState', this.gameState);
           console.log('[INIT] firstHostId set to', this.firstHostId);
           // await this.saveGameStateToD1();
-          console.log('Party initialized via /init:', partyId, id, name);
+          console.log('Party initialized via /init:', partyCode, id, name);
         }
         return new Response('OK', { status: 200 });
       } catch (e) {
@@ -151,7 +151,9 @@ export class PartyState {
           // Try to load from D1
           const url = new URL(request.url);
           const match = url.pathname.match(/party\/(\w+)/);
-          const partyId = match ? match[1] : 'unknown';
+          const partyCode = match ? match[1] : 'unknown';
+          const tempGameName = 'tempgamename-';
+          const partyId = `${tempGameName}${partyCode}`;
           const result = await this.env.DB.prepare('SELECT state_json FROM games WHERE party_id = ? LIMIT 1').bind(partyId).first();
           if (result && result.state_json) {
             stored = JSON.parse(result.state_json);
@@ -190,10 +192,10 @@ export class PartyState {
             if (!this.gameState) {
               const url = new URL(request.url);
               const match = url.pathname.match(/party\/(\w+)/);
-              const partyId = match && match[1] ? match[1] : 'unknown';
+              const partyCode = match && match[1] ? match[1] : 'unknown';
               this.gameState = {
                 gameId: 'avalon',
-                partyId,
+                partyCode,
                 players: [],
                 gameStarted: false
               };
