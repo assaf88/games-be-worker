@@ -41,7 +41,7 @@ export default {
         attempts++;
       } while (existingIds.has(partyId) && attempts < maxAttempts);
       if (existingIds.has(partyId)) {
-        return new Response(JSON.stringify({ error: 'Could not generate unique party id' }), { status: 500 });
+        return new Response(JSON.stringify({ error: 'Failed to create party. Please try again.' }), { status: 500 });
       }
       // Create Durable Object and initialize game state
       const idObj = env.PARTY_STATE.idFromName(partyId || '');
