@@ -1,29 +1,32 @@
-interface Player {
-  id: string;
-  name: string;
-  order?: number;
-  connected?: boolean;
-  disconnectTime?: number; // Added for linter
-}
+// interface Player {
+//   id: string;
+//   name: string;
+//   order?: number;
+//   connected?: boolean;
+//   disconnectTime?: number; // Added for linter
+// }
 
-interface GameState {
-  gameId: string;
-  partyId: string;
-  players: Player[];
-  gameStarted: boolean; // Added gameStarted to GameState
-}
+import { GameState } from "./GameState";
+import { Player } from "./Player";
 
-function generatePlayerId(): string {
-  // Simple GUID-like generator
-  return 'xxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-    const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-}
+// interface GameState {
+//   gameId: string;
+//   partyId: string;
+//   players: Player[];
+//   gameStarted: boolean; // Added gameStarted to GameState
+// }
 
-function generatePlayerName(): string {
-  return `nocookiesyet${Date.now()}`;
-}
+// function generatePlayerId(): string {
+//   // Simple GUID-like generator
+//   return 'xxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+//     const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+//     return v.toString(16);
+//   });
+// }
+
+// function generatePlayerName(): string {
+//   return `nocookiesyet${Date.now()}`;
+// }
 
 export class PartyState {
   state: DurableObjectState;
@@ -66,7 +69,7 @@ export class PartyState {
       // Remove players who have been disconnected for 60s
       const removedIds: string[] = [];
       const now = Date.now();
-      const beforePlayers = this.gameState.players.map(p => p.id);
+      // const beforePlayers = this.gameState.players.map(p => p.id);
       this.gameState.players = this.gameState.players.filter(p => {
         // During an active game, never remove disconnected players
         if (this.gameState && this.gameState.gameStarted) {
