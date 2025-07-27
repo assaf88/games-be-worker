@@ -10,6 +10,9 @@ interface Env {
   DB: D1Database;
 }
 
+// In-memory tracking of active party codes (clears on worker restart)
+const activePartyCodes = new Set<string>();
+
 function getGameIdAndPartyCodeFromUrl(url: URL): { gameId: string | null, partyCode: string | null } {
   // Match patterns like /game/avalon/party/xxxx or /game/avalon/create-party
   const gameMatch = url.pathname.match(/\/game\/(\w+)\/(?:party\/(\w+)|create-party)/);
@@ -52,9 +55,12 @@ export default {
 
       const { id, name } = await request.json() as { id: string, name: string };
       
-      // Fetch all existing party_ids in one query
+      // Fetch all existing party_ids from D1 (started games)
       const allIdsResult = await env.DB.prepare('SELECT party_id FROM games').all();
       const existingIds = new Set((allIdsResult.results || []).map((row: any) => row.party_id));
+      
+      // Combine D1 results with in-memory active codes
+      const allTakenIds = new Set([...existingIds, ...activePartyCodes]);
       
       // Generate a unique 4-digit party_code
       let partyId;
@@ -65,12 +71,15 @@ export default {
         partyCode = (Math.floor(1000 + Math.random() * 9000)).toString();
         partyId = `${gameId}-${partyCode}`;
         attempts++;
-      } while (existingIds.has(partyId) && attempts < maxAttempts);
+      } while (allTakenIds.has(partyId) && attempts < maxAttempts);
       
-      if (existingIds.has(partyId)) {
+      if (allTakenIds.has(partyId)) {
         return new Response(JSON.stringify({ error: 'Failed to create party. Please try again.' }), { status: 500 });
       }
       
+      // Add to in-memory tracking
+      activePartyCodes.add(partyId);
+
       // Create Durable Object and initialize game state
       const idObj = env.PARTY_STATE.idFromName(partyId);
       const stub = env.PARTY_STATE.get(idObj);
@@ -83,6 +92,17 @@ export default {
       
       // Save to D1 immediately (the Durable Object will handle it)
       return new Response(JSON.stringify({ partyCode }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    // Handle cleanup requests from Durable Objects
+    if (url.pathname === '/cleanup-party' && request.method === 'POST') {
+      try {
+        const { partyId } = await request.json() as { partyId: string };
+        activePartyCodes.delete(partyId);
+        return new Response('OK', { status: 200 });
+      } catch (e) {
+        return new Response('Bad Request', { status: 400 });
+      }
     }
 
     // Handle WebSocket connections for specific games

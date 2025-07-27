@@ -274,6 +274,26 @@ export class GamePartyState {
         console.log('[REMOVE] Remaining connections:', Array.from(this.connections.values()).map(p => p.id));
         stateChanged = true;
       }
+      
+      // Cleanup orphaned parties (no players, no game started)
+      if (this.gameState && !this.gameState.gameStarted && this.gameState.players.length === 0 && this.connections.size === 0) {
+        const partyId = `${this.gameState.gameId}-${this.gameState.partyCode}`;
+        console.log('[CLEANUP] Orphaned party detected:', partyId);
+        
+        // Call cleanup endpoint to remove from in-memory tracking
+        fetch('https://internal/cleanup-party', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ partyId })
+        }).catch(console.error);
+        
+        // Stop the ping interval for this orphaned party
+        if (this.pingInterval) {
+          clearInterval(this.pingInterval);
+          this.pingInterval = null;
+        }
+      }
+      
       if (stateChanged) {
         this.broadcastGameState();
       }
