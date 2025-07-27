@@ -1,9 +1,9 @@
 // Cloudflare Worker entrypoint. Configuration is in wrangler.toml.
-// Durable Object: PartyState
+// Durable Object: GamePartyState
 // To deploy: wrangler deploy (see package.json scripts)
 
-import PartyState from './PartyState';
-import { PartyStateFactory } from './PartyStateFactory';
+import GamePartyState from './GamePartyState';
+import { GameHandlerFactory } from './handlers/GameHandlerFactory';
 
 interface Env {
   PARTY_STATE: DurableObjectNamespace;
@@ -21,7 +21,7 @@ function getGameIdAndPartyCodeFromUrl(url: URL): { gameId: string | null, partyC
   return { gameId: null, partyCode: null };
 }
 
-export { PartyState };
+export { GamePartyState };
 
 export default {
   async fetch(request, env, ctx) {
@@ -43,7 +43,7 @@ export default {
       const gameId = createPartyMatch[1];
       
       // Validate game type
-      if (!PartyStateFactory.isValidGameId(gameId)) {
+      if (!GameHandlerFactory.isValidGameId(gameId)) {
         return new Response(JSON.stringify({ error: `Game type '${gameId}' not supported` }), { 
           status: 404, 
           headers: { 'Content-Type': 'application/json' } 
@@ -94,7 +94,7 @@ export default {
       }
       
       // Validate game type
-      if (!PartyStateFactory.isValidGameId(gameId)) {
+      if (!GameHandlerFactory.isValidGameId(gameId)) {
         return new Response(`Game type '${gameId}' not supported`, { status: 404 });
       }
       
@@ -106,5 +106,5 @@ export default {
 
     return new Response('Not found', { status: 404 });
   },
-  PartyState,  // This was the correct way to export Durable Objects
-} satisfies ExportedHandler<Env> & { PartyState: typeof PartyState };
+  GamePartyState,  // This was the correct way to export Durable Objects
+} satisfies ExportedHandler<Env> & { GamePartyState: typeof GamePartyState };

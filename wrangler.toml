@@ -6,11 +6,11 @@ compatibility_date = "2025-07-10"
 enabled = true
 
 [durable_objects]
-bindings = [{ name = "PARTY_STATE", class_name = "PartyState" }]
+bindings = [{ name = "PARTY_STATE", class_name = "GamePartyState" }]
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = [ "PartyState" ]
+new_sqlite_classes = [ "GamePartyState" ]
 
 [[d1_databases]]
 binding = "DB"

@@ -1,0 +1,294 @@
+import { GameState } from './interfaces/GameState';
+import { Player } from './interfaces/Player';
+import { GameHandlerFactory } from './handlers/GameHandlerFactory';
+
+export class GamePartyState {
+  state: DurableObjectState;
+  connections: Map<WebSocket, Player> = new Map();
+  gameState: GameState | null = null;
+  env: any;
+  hostId: string | null = null;
+  firstHostId: string | null = null;
+  pingInterval: any;
+  private gameId: string = 'unknown';
+  private gameHandler: any = null; // Will hold the specific game handler
+
+  constructor(state: DurableObjectState, env: any) {
+    this.state = state;
+    this.env = env;
+    this.startPingInterval();
+  }
+
+  
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    if (request.method === 'POST' && url.pathname === '/init') {
+      // Internal initialization request
+      try {
+        const requestData = await request.json() as { id: string, name: string, partyCode: string, gameId: string };
+        const { id, name, partyCode, gameId } = requestData;
+        
+        // Initialize the game handler based on gameId
+        if (!this.gameHandler) {
+          this.gameHandler = GameHandlerFactory.createGameHandler(gameId);
+          this.gameId = gameId;
+        }
+        
+        if (!this.gameState) {
+          this.gameState = {
+            gameId,
+            partyCode,
+            players: [],
+            gameStarted: false
+          };
+          this.firstHostId = id;
+          this.hostId = id;
+          await this.state.storage.put('gameState', this.gameState);
+          console.log('[INIT] firstHostId set to', this.firstHostId);
+          console.log('Party initialized via /init:', partyCode, id, name);
+        }
+        return new Response('OK', { status: 200 });
+      } catch (e) {
+        return new Response('Bad Request', { status: 400 });
+      }
+    }
+
+    if (request.headers.get('upgrade') === 'websocket') {
+      const { 0: client, 1: server } = new WebSocketPair();
+      let player: Player | null = null;
+
+      server.accept();
+      this.connections.set(server, player as Player);
+
+      server.addEventListener('message', async (event: MessageEvent) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('WebSocket message received:', data);
+
+          if (data && data.action === 'register' && data.id && data.name) {
+            // Load existing game state if available
+            if (!this.gameState) {
+              this.gameState = await this.state.storage.get('gameState');
+            }
+            if (!this.gameState) {
+              this.gameState = {
+                gameId: this.gameId,
+                partyCode: 'unknown',
+                players: [],
+                gameStarted: false
+              };
+            }
+            console.log('[REGISTER] Incoming player_id:', data.id);
+            if (this.gameState && this.gameState.players) {
+              console.log('[REGISTER] Current players:', this.gameState.players.map(p => p.id));
+            }
+            // Prevent joining if game already started and not in players
+            if (
+              this.gameState &&
+              this.gameState.gameId === 'avalon' &&
+              this.gameState.gameStarted &&
+              !this.gameState.players.some(p => p.id === data.id)
+            ) {
+              server.send(JSON.stringify({ action: 'error', reason: 'game_started' }));
+              try { server.close(); } catch {}
+              return;
+            }
+            // Ensure only one active connection per player id
+            for (const [ws, p] of this.connections.entries()) {
+              if (p && data && typeof data.id === 'string' && p.id === data.id) {
+                try { ws.close(); } catch {}
+                this.connections.delete(ws);
+              }
+            }
+            player = { id: data.id, name: data.name, connected: true };
+            this.connections.set(server, player);
+            // Only add player if not already present
+            let stateChanged = false;
+            if (this.gameState && !this.gameState.players.some(p => p.id === data.id)) {
+              this.gameState.players.push(player);
+              await this.state.storage.put('gameState', this.gameState);
+              stateChanged = true;
+              
+              // Only set hostId to firstHostId if it is present in players and connections
+              const firstHostPresent = this.gameState.players.some(p => p.id === this.firstHostId);
+              const firstHostConnected = Array.from(this.connections.values()).some(p => p.id === this.firstHostId);
+              if (this.firstHostId && firstHostPresent && firstHostConnected) {
+                this.hostId = this.firstHostId;
+              } else if (this.gameState.players.length > 0) {
+                // Pick first connected player as host
+                const connectedPlayer = this.gameState.players.find(p => Array.from(this.connections.values()).some(connP => connP.id === p.id));
+                this.hostId = connectedPlayer ? connectedPlayer.id : null;
+              } else {
+                this.hostId = null;
+              }
+              console.log('[HOST ASSIGN] firstHostId:', this.firstHostId, 'hostId:', this.hostId);
+            } else {
+              const p = this.gameState.players.find(pl => pl.id === data.id);
+              if (p) {
+                p.connected = true;
+                p.disconnectTime = undefined;
+              }
+            }
+            if (!this.hostId && player && player.id) {
+              this.hostId = player.id;
+            }
+            // Always broadcast state after registration, even if not newly added
+            this.broadcastGameState();
+            return;
+          }
+          // Handle ping from client - respond with pong only
+          if (data && data.action === 'ping') {
+            server.send(JSON.stringify({
+              action: 'pong',
+              timestamp: Date.now()
+            }));
+            return;
+          }
+          // Handle pong from client
+          if (data && data.action === 'pong' && player && player.id) {
+            const p = this.gameState.players.find(pl => pl.id === player.id);
+            if (p) {
+              p.connected = true;
+              p.disconnectTime = undefined;
+            }
+            return;
+          }
+          
+          // Handle game-specific messages using the game handler
+          if (this.gameHandler) {
+            await this.gameHandler.handleGameMessage(data, player, this);
+          } 
+        } catch (error) {
+          // Ignore non-JSON messages
+        }
+      });
+
+      const cleanup = async () => {
+        const player = this.connections.get(server);
+        this.connections.delete(server);
+        if (this.gameState && player) {
+          if (this.gameState.gameStarted) {
+            // Just mark as disconnected
+            const p = this.gameState.players.find(p => p.id === player?.id);
+            if (p) {
+              p.connected = false;
+              p.disconnectTime = Date.now();
+            }
+          } else {
+            // Only remove if game not started
+            this.gameState.players = this.gameState.players.filter(p => p.id !== player?.id);
+          }
+          await this.state.storage.put('gameState', this.gameState);
+          // If the first host is present, they are always the host
+          if (this.firstHostId && this.gameState && this.gameState.players && Array.isArray(this.gameState.players) && this.gameState.players.some(p => p.id === this.firstHostId)) {
+            this.hostId = this.firstHostId;
+          } else if (this.gameState && this.gameState.players && Array.isArray(this.gameState.players) && this.gameState.players.length > 0) {
+            this.hostId = this.gameState.players[0].id;
+          } else {
+            this.hostId = null;
+          }
+          this.broadcastGameState();
+          console.log('Player left and broadcasted:', player?.id);
+        }
+      };
+
+      server.addEventListener('close', cleanup);
+      server.addEventListener('error', cleanup);
+
+      return new Response(null, { status: 101, webSocket: client });
+    }
+    return new Response('Expected websocket', { status: 400 });
+  }
+
+  broadcastGameState(options: { gameStarting?: boolean } = {}) {
+    if (!this.gameState) return;
+    
+    const state: any = { action: 'update_state', ...this.gameState, hostId: this.hostId };
+    if (options.gameStarting) {
+      (state as any).gameStarting = true;
+      console.log('Broadcasting gameStarting: true');
+    }
+    const msg = JSON.stringify(state);
+    console.log('Broadcasting message:', msg);
+    for (const ws of this.connections.keys()) {
+      if (ws.readyState === 1) {
+        ws.send(msg);
+      }
+    }
+  }
+
+  startPingInterval() {
+    if (this.pingInterval) return;
+    this.pingInterval = setInterval(() => {
+      if (!this.gameState) return;
+      let stateChanged = false;
+      for (const player of this.gameState.players) {
+        // If not in connections, mark as disconnected
+        const isConnected = Array.from(this.connections.values()).some(p => p.id === player.id);
+        if (!isConnected) {
+          if (player.connected !== false) {
+            player.connected = false;
+            player.disconnectTime = Date.now();
+            stateChanged = true;
+          }
+        } else {
+          // Send ping to connected player
+          for (const [ws, p] of this.connections.entries()) {
+            if (p.id === player.id) {
+              try { ws.send(JSON.stringify({ action: 'ping' })); } catch {}
+            } 
+          }
+        }
+      }
+      // Remove players who have been disconnected for 60s
+      const removedIds: string[] = [];
+      const now = Date.now();
+      this.gameState.players = this.gameState.players.filter(p => {
+        // During an active game, never remove disconnected players
+        if (this.gameState && this.gameState.gameStarted) {
+          return true;
+        }
+        // Only remove if not in an active game
+        if (p.connected === false && p.disconnectTime && now - p.disconnectTime > 60000) {
+          removedIds.push(p.id);
+          return false;
+        }
+        return true;
+      });
+      if (removedIds.length > 0) {
+        // Remove from connections map as well
+        for (const [ws, p] of this.connections.entries()) {
+          if (removedIds.includes(p.id)) {
+            try { ws.close(); } catch {}
+            this.connections.delete(ws);
+          }
+        }
+        console.log('[REMOVE] Players removed after 60s disconnected:', removedIds);
+        console.log('[REMOVE] Remaining players:', this.gameState.players.map(p => p.id));
+        console.log('[REMOVE] Remaining connections:', Array.from(this.connections.values()).map(p => p.id));
+        stateChanged = true;
+      }
+      if (stateChanged) {
+        this.broadcastGameState();
+      }
+    }, 30000); // Ping every 30s
+  }
+
+  // upsert game state into D1
+  async saveGameStateToD1() {
+    if (!this.gameState) return;
+    this.env.DB.prepare(
+      `INSERT INTO games (party_id, game_id, state_json, status, updated_at) VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(party_id) DO UPDATE SET game_id=excluded.game_id, state_json=excluded.state_json, status=excluded.status, updated_at=excluded.updated_at`
+    ).bind(
+      this.gameState.partyCode,
+      this.gameState.gameId,
+      JSON.stringify(this.gameState),
+      'active',
+      new Date().toISOString()
+    ).run();
+    return;
+  }
+}
+
+export default GamePartyState; 
