@@ -3,21 +3,28 @@
 // To deploy: wrangler deploy (see package.json scripts)
 
 import PartyState from './PartyState';
+import { PartyStateFactory } from './PartyStateFactory';
 
 interface Env {
   PARTY_STATE: DurableObjectNamespace;
   DB: D1Database;
 }
 
-function getPartyCodeFromUrl(url: URL): string | null {
-  const match = url.pathname.match(/\/game\/party\/(\w+)/);
-  return match ? match[1] : null;
+function getGameIdAndPartyCodeFromUrl(url: URL): { gameId: string | null, partyCode: string | null } {
+  // Match patterns like /game/avalon/party/xxxx or /game/avalon/create-party
+  const gameMatch = url.pathname.match(/\/game\/(\w+)\/(?:party\/(\w+)|create-party)/);
+  if (gameMatch) {
+    const gameId = gameMatch[1];
+    const partyCode = gameMatch[2] || null; // null for create-party endpoints
+    return { gameId, partyCode };
+  }
+  return { gameId: null, partyCode: null };
 }
 
 export { PartyState };
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request, env, ctx) {
     const url = new URL(request.url);
   
     if (request.method === 'OPTIONS') {
@@ -30,46 +37,69 @@ export default {
       });
     }
 
-    // Handle party creation
-    if (url.pathname === '/game/create-party' && request.method === 'POST') {
+    // Handle party creation for specific games
+    const createPartyMatch = url.pathname.match(/\/game\/(\w+)\/create-party/);
+    if (createPartyMatch && request.method === 'POST') {
+      const gameId = createPartyMatch[1];
+      
+      // Validate game type
+      if (!PartyStateFactory.isValidGameId(gameId)) {
+        return new Response(JSON.stringify({ error: `Game type '${gameId}' not supported` }), { 
+          status: 404, 
+          headers: { 'Content-Type': 'application/json' } 
+        });
+      }
+
       const { id, name } = await request.json() as { id: string, name: string };
+      
       // Fetch all existing party_ids in one query
       const allIdsResult = await env.DB.prepare('SELECT party_id FROM games').all();
       const existingIds = new Set((allIdsResult.results || []).map((row: any) => row.party_id));
+      
       // Generate a unique 4-digit party_code
       let partyId;
       let partyCode;
       let attempts = 0;
       const maxAttempts = 20;
-      const tempGameName = 'tempgamename-';
       do {
         partyCode = (Math.floor(1000 + Math.random() * 9000)).toString();
-        partyId = `${tempGameName}${partyCode}`;
+        partyId = `${gameId}-${partyCode}`;
         attempts++;
       } while (existingIds.has(partyId) && attempts < maxAttempts);
+      
       if (existingIds.has(partyId)) {
         return new Response(JSON.stringify({ error: 'Failed to create party. Please try again.' }), { status: 500 });
       }
+      
       // Create Durable Object and initialize game state
-      const idObj = env.PARTY_STATE.idFromName(partyId || '');
+      const idObj = env.PARTY_STATE.idFromName(partyId);
       const stub = env.PARTY_STATE.get(idObj);
+      
       // Send an internal request to initialize the party with the creator
       await stub.fetch('https://internal/init', {
         method: 'POST',
-        body: JSON.stringify({ id, name, partyCode })
+        body: JSON.stringify({ id, name, partyCode, gameId })
       });
+      
       // Save to D1 immediately (the Durable Object will handle it)
       return new Response(JSON.stringify({ partyCode }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
-    // Handle WebSocket connections
+    // Handle WebSocket connections for specific games
     if (request.headers.get('upgrade') === 'websocket') {
-      const partyCode = getPartyCodeFromUrl(url);
-      if (!partyCode) {
-        return new Response('Invalid party code', { status: 400 });
+      const { gameId, partyCode } = getGameIdAndPartyCodeFromUrl(url);
+      
+      if (!gameId || !partyCode) {
+        return new Response('Invalid game or party code', { status: 400 });
       }
-      const tempGameName = 'tempgamename-';
-      const id = env.PARTY_STATE.idFromName(`${tempGameName}${partyCode}`);
+      
+      // Validate game type
+      if (!PartyStateFactory.isValidGameId(gameId)) {
+        return new Response(`Game type '${gameId}' not supported`, { status: 404 });
+      }
+      
+      const partyId = `${gameId}-${partyCode}`;
+      const id = env.PARTY_STATE.idFromName(partyId);
       const obj = env.PARTY_STATE.get(id);
       return obj.fetch(request);
     }

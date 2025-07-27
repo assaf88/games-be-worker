@@ -36,6 +36,7 @@ export class PartyState {
   hostId: string | null = null;
   firstHostId: string | null = null;
   pingInterval: any;
+  protected gameId: string = 'unknown'; // Will be set by subclasses
 
   constructor(state: DurableObjectState, env: any) {
     this.state = state;
@@ -122,10 +123,11 @@ export class PartyState {
     if (request.method === 'POST' && url.pathname === '/init') {
       // Internal initialization request
       try {
-        const { id, name, partyCode } = await request.json();
+        const requestData = await request.json() as { id: string, name: string, partyCode: string, gameId: string };
+        const { id, name, partyCode, gameId } = requestData;
         if (!this.gameState) {
           this.gameState = {
-            gameId: 'avalon',
+            gameId,
             partyCode,
             players: [], // Do NOT add host here
             gameStarted: false // Initialize gameStarted
@@ -279,45 +281,10 @@ export class PartyState {
             }
             return;
           }
-          // Handle start_game action (only host can start)
-          if (data && data.action === 'start_game' && player && typeof player.id === 'string' && this.hostId && player.id === this.hostId) {
-            if (this.gameState) {
-              // Normalize player order: sort by current order (nulls last), then assign 1..N
-              const sorted = [...this.gameState.players].sort((a, b) => {
-                const ao = typeof a.order === 'number' ? a.order : 9999;
-                const bo = typeof b.order === 'number' ? b.order : 9999;
-                return ao - bo;
-              });
-              let order = 1;
-              for (const p of sorted) {
-                p.order = order++;
-              }
-              // Re-apply sorted order to gameState.players
-              this.gameState.players = sorted;
-              this.gameState.gameStarted = true;
-              // Save to DB only on start, and do NOT include hostId/firstHostId in the saved state
-              const { hostId, firstHostId, ...stateToSave } = this;
-              this.saveGameStateToD1();
-              this.broadcastGameState({ gameStarting: true });
-            }
-            return;
-          }
-          if (data && data.action === 'update_order' && Array.isArray(data.players)) {
-            if (this.gameState) {
-              // Update order for each player in gameState.players
-              for (const update of data.players) {
-                const player = this.gameState.players.find(p => p.id === update.id);
-                if (player && typeof update.order === 'number') {
-                  player.order = update.order;
-                }
-              }
-              // Save to storage and DB
-              await this.state.storage.put('gameState', this.gameState);
-              await this.saveGameStateToD1();
-              this.broadcastGameState();
-            }
-            return;
-          }
+          
+          // Handle game-specific messages (to be overridden by subclasses)
+          await this.handleGameMessage(data, player);
+          
           // For now, just broadcast state on any message (except ping)
           this.broadcastGameState();
         } catch (error) {
@@ -361,6 +328,50 @@ export class PartyState {
     }
     return new Response('Expected websocket', { status: 400 });
   }
+
+  // protected async handleGameMessage(data: any, player: Player | null) {
+  //   if (!this.gameState || !player) return;
+
+  //   // Handle start_game action (only host can start)
+  //   if (data && data.action === 'start_game' && typeof player.id === 'string' && this.hostId && player.id === this.hostId) {
+  //     if (this.gameState) {
+  //       // Normalize player order: sort by current order (nulls last), then assign 1..N
+  //       const sorted = [...this.gameState.players].sort((a, b) => {
+  //         const ao = typeof a.order === 'number' ? a.order : 9999;
+  //         const bo = typeof b.order === 'number' ? b.order : 9999;
+  //         return ao - bo;
+  //       });
+  //       let order = 1;
+  //       for (const p of sorted) {
+  //         p.order = order++;
+  //       }
+  //       // Re-apply sorted order to gameState.players
+  //       this.gameState.players = sorted;
+  //       this.gameState.gameStarted = true;
+  //       // Save to DB only on start, and do NOT include hostId/firstHostId in the saved state
+  //       const { hostId, firstHostId, ...stateToSave } = this;
+  //       this.saveGameStateToD1();
+  //       this.broadcastGameState({ gameStarting: true });
+  //     }
+  //     return;
+  //   }
+  //   if (data && data.action === 'update_order' && Array.isArray(data.players)) {
+  //     if (this.gameState) {
+  //       // Update order for each player in gameState.players
+  //       for (const update of data.players) {
+  //         const player = this.gameState.players.find(p => p.id === update.id);
+  //         if (player && typeof update.order === 'number') {
+  //           player.order = update.order;
+  //         }
+  //       }
+  //       // Save to storage and DB
+  //       await this.state.storage.put('gameState', this.gameState);
+  //       await this.saveGameStateToD1();
+  //       this.broadcastGameState();
+  //     }
+  //     return;
+  //   }
+  // }
 
   broadcastGameState(options: { gameStarting?: boolean } = {}) {
     if (!this.gameState) return;
