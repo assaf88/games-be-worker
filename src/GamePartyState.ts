@@ -93,9 +93,15 @@ export class GamePartyState {
               try { server.close(); } catch {}
               return;
             }
-            // Ensure only one active connection per player id
+            // Allow multiple connections from same player, but make the newest connection primary
             for (const [ws, p] of this.connections.entries()) {
               if (p && data && typeof data.id === 'string' && p.id === data.id) {
+                // Send message to old connection to refresh/close
+                ws.send(JSON.stringify({ 
+                  action: 'error', 
+                  reason: 'connection_replaced',
+                  message: 'A newer tab has connected to this party. You can close this page.'
+                }));
                 try { ws.close(); } catch {}
                 this.connections.delete(ws);
               }
