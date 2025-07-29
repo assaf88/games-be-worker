@@ -23,13 +23,6 @@ export class GamePartyState {
     this.startPingInterval();
   }
 
-  // Initialize party details from the partyId
-  initializePartyDetails(gameId: string, partyCode: string): void {
-    this.gameId = gameId;
-    this.partyCode = partyCode;
-    this.partyId = `${gameId}-${partyCode}`;
-  }
-
   private async loadGameStateFromD1(): Promise<boolean> {
     const result = await this.env.DB.prepare('SELECT state_json FROM games WHERE party_id = ? AND status = ? LIMIT 1')
       .bind(this.partyId, 'active').first();
@@ -123,13 +116,10 @@ export class GamePartyState {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-    
+        
     if (request.method === 'POST' && url.pathname === '/init') {
       try {
         const { id, name, partyCode, gameId } = await request.json() as { id: string, name: string, partyCode: string, gameId: string };
-        
-        // Initialize party details
-        this.initializePartyDetails(gameId, partyCode);
         
         if (!this.gameHandler) {
           this.gameHandler = GameHandlerFactory.createGameHandler(gameId);
@@ -158,6 +148,13 @@ export class GamePartyState {
 
       server.accept();
       
+      const urlParts = url.pathname.match(/\/game\/(\w+)\/party\/(\w+)/);
+      if (urlParts) {
+        this.gameId = urlParts[1];
+        this.partyCode = urlParts[2];
+        this.partyId = `${this.gameId}-${this.partyCode}`;
+      }
+
       // Load game state from storage
       this.gameState = await this.state.storage.get('gameState');
       
