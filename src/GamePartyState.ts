@@ -13,6 +13,7 @@ export class GamePartyState {
   gameId: string = 'unknown';
   partyCode: string = 'unknown';
   partyId: string = 'unknown';
+  lastAccess: number = Date.now();
   private gameHandler: any = null;
 
   constructor(state: DurableObjectState, env: any) {
@@ -87,6 +88,37 @@ export class GamePartyState {
     } else {
       this.hostId = null;
     }
+  }
+
+  private async cleanupOrphanedPartyAfter24h(): Promise<boolean> {
+    if (!this.gameState || this.gameState.gameStarted) {
+      return false;
+    }
+
+    const allDisconnected = this.gameState.players.every(p => p.connected === false);
+    const timeSinceLastAccess = Date.now() - this.lastAccess;
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+    
+    if (allDisconnected && timeSinceLastAccess > twentyFourHours) {
+      // Clear storage and let DO be garbage collected
+      await this.state.storage.deleteAll();
+      
+      // Stop ping interval
+      if (this.pingInterval) {
+        clearInterval(this.pingInterval);
+        this.pingInterval = null;
+      }
+      
+      // Close all connections
+      for (const [ws, p] of this.connections.entries()) {
+        try { ws.close(); } catch {}
+      }
+      this.connections.clear();
+      
+      return true; // Indicates cleanup was performed
+    }
+    
+    return false; // No cleanup needed
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -167,6 +199,7 @@ export class GamePartyState {
           const data = JSON.parse(event.data as string);
 
           if (data?.action === 'register' && data.id && data.name) {
+            this.lastAccess = Date.now(); // Update last access
             this.cleanupStaleConnections(data.id);
             
             // Prevent joining if game already started and not in players
@@ -222,6 +255,7 @@ export class GamePartyState {
           
           // Handle pong from client
           if (data?.action === 'pong' && player?.id) {
+            this.lastAccess = Date.now(); // Update last access
             const p = this.gameState?.players.find(pl => pl.id === player.id);
             if (p) {
               p.connected = true;
@@ -288,7 +322,7 @@ export class GamePartyState {
 
   startPingInterval() {
     if (this.pingInterval) return;
-    this.pingInterval = setInterval(() => {
+    this.pingInterval = setInterval(async () => {
       if (!this.gameState) return;
       
       let stateChanged = false;
@@ -336,18 +370,24 @@ export class GamePartyState {
         stateChanged = true;
       }
       
-      // Cleanup orphaned parties
-      if (this.gameState && !this.gameState.gameStarted && this.gameState.players.length === 0 && this.connections.size === 0) {
-        fetch('https://internal/cleanup-party', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ partyId: this.partyId })
-        }).catch(console.error);
+      // Cleanup orphaned parties - MOST PROBABY REPLACED BY cleanupOrphanedPartyAfter24h BELOW. DO NOT REMOVE THIS!
+      // if (this.gameState && !this.gameState.gameStarted && this.gameState.players.length === 0 && this.connections.size === 0) {
+      //   fetch('https://internal/cleanup-party', {
+      //     method: 'POST',
+      //     headers: { 'Content-Type': 'application/json' },
+      //     body: JSON.stringify({ partyId: this.partyId })
+      //   }).catch(console.error);
         
-        if (this.pingInterval) {
-          clearInterval(this.pingInterval);
-          this.pingInterval = null;
-        }
+      //   if (this.pingInterval) {
+      //     clearInterval(this.pingInterval);
+      //     this.pingInterval = null;
+      //   }
+      // }
+      
+      // Cleanup orphaned parties after 24 hours of inactivity
+      const cleanupPerformed = await this.cleanupOrphanedPartyAfter24h();
+      if (cleanupPerformed) {
+        return; // Exit the ping interval
       }
       
       if (stateChanged) {
