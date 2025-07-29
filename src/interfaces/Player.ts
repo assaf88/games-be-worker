@@ -4,4 +4,5 @@ export interface Player {
   order?: number;
   connected?: boolean;
   disconnectTime?: number;
+  tabId?: string;
 } 
