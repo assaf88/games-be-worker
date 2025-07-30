@@ -4,6 +4,7 @@
 
 import GamePartyState from './GamePartyState';
 import { GameHandlerFactory } from './handlers/GameHandlerFactory';
+import { DatabaseManager } from './DatabaseManager';
 
 interface Env {
   PARTY_STATE: DurableObjectNamespace;
@@ -56,8 +57,8 @@ export default {
       const { id, name } = await request.json() as { id: string, name: string };
       
       // Fetch all existing party_ids from D1 (started games)
-      const allIdsResult = await env.DB.prepare('SELECT party_id FROM games').all();
-      const existingIds = new Set((allIdsResult.results || []).map((row: any) => row.party_id));
+      const dbManager = new DatabaseManager(env);
+      const existingIds = new Set(await dbManager.getAllPartyIds());
       
       // Combine D1 results with in-memory active codes
       const allTakenIds = new Set([...existingIds, ...activePartyCodes]);

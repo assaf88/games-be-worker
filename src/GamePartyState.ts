@@ -1,6 +1,7 @@
 import { GameState } from './interfaces/GameState';
 import { Player } from './interfaces/Player';
 import { GameHandlerFactory } from './handlers/GameHandlerFactory';
+import { DatabaseManager } from './DatabaseManager';
 
 export class GamePartyState {
   state: DurableObjectState;
@@ -15,10 +16,12 @@ export class GamePartyState {
   partyId: string = 'unknown';
   lastAccess: number = Date.now();
   private gameHandler: any = null;
+  private dbManager: DatabaseManager;
 
   constructor(state: DurableObjectState, env: any) {
     this.state = state;
     this.env = env;
+    this.dbManager = new DatabaseManager(env);
     this.connections = new Map(); // Clear all connections on worker restart
     this.startPingInterval();
   }
@@ -67,37 +70,19 @@ export class GamePartyState {
       // Load game state from storage
       this.gameState = await this.state.storage.get('gameState');
       
-      if (this.gameState) {
-        if (!this.gameHandler) {
-          this.gameHandler = GameHandlerFactory.createGameHandler(this.gameState.gameId);
-          this.gameId = this.gameState.gameId;
-        }
-      } else {
-        // Try to load from D1 database
-        if (await this.loadGameStateFromD1()) {
-          // Successfully loaded from D1
+      if (!this.gameState) {
+        const gameState = await this.dbManager.loadGameStateFromD1(this.partyId);
+        if (gameState) {
+          this.gameState = gameState;
+          await this.state.storage.put('gameState', this.gameState);
         } else {
           this.sendErrorAndClose(server, 'party_not_found');
           return new Response(null, { status: 101, webSocket: client });
         }
       }
-      
-      // Try D1 loading if game state exists but gameStarted is false (stale storage)
-      if (this.gameState && !this.gameState.gameStarted) {
-        const result = await this.env.DB.prepare('SELECT state_json FROM games WHERE party_id = ? AND status = ? LIMIT 1')
-          .bind(this.partyId, 'active').first();
-        
-        if (result?.state_json) {
-          const d1GameState = JSON.parse(result.state_json);
-          if (d1GameState?.gameStarted) {
-            this.gameState = d1GameState;
-            await this.state.storage.put('gameState', this.gameState);
-            if (!this.gameHandler) {
-              this.gameHandler = GameHandlerFactory.createGameHandler(this.gameState.gameId);
-              this.gameId = this.gameState.gameId;
-            }
-          }
-        }
+
+      if (!this.gameHandler) {
+        this.gameHandler = GameHandlerFactory.createGameHandler(this.gameId);
       }
 
       server.addEventListener('message', async (event: MessageEvent) => {
@@ -105,6 +90,7 @@ export class GamePartyState {
           const data = JSON.parse(event.data as string);
 
           if (data?.action === 'register' && data.id && data.name) {
+            // console.log(`[DEBUG] Register attempt - Party: ${this.partyCode}, GameStarted: ${this.gameState?.gameStarted}, Player: ${data.id}, GameId: ${this.gameState?.gameId}`);
             this.lastAccess = Date.now(); // Update last access
             this.cleanupStaleConnections(data.id);
             
@@ -202,29 +188,14 @@ export class GamePartyState {
       server.addEventListener('close', cleanup);
       server.addEventListener('error', cleanup);
 
+      
       return new Response(null, { status: 101, webSocket: client });
     }
     return new Response('Expected websocket', { status: 400 });
   }
 
-  
-  /////HELPER FUNCTIONS/////
 
-  private async loadGameStateFromD1(): Promise<boolean> {
-    const result = await this.env.DB.prepare('SELECT state_json FROM games WHERE party_id = ? AND status = ? LIMIT 1')
-      .bind(this.partyId, 'active').first();
-    
-    if (result && result.state_json) {
-      this.gameState = JSON.parse(result.state_json);
-      await this.state.storage.put('gameState', this.gameState);
-      if (!this.gameHandler && this.gameState) {
-        this.gameHandler = GameHandlerFactory.createGameHandler(this.gameState.gameId);
-        this.gameId = this.gameState.gameId;
-      }
-      return true;
-    }
-    return false;
-  }
+  /////HELPER FUNCTIONS/////
 
   private sendErrorAndClose(server: WebSocket, reason: string): void {
     try {
@@ -246,13 +217,9 @@ export class GamePartyState {
     
     if (ws.readyState === 1) {
       // If we have tab IDs, only replace if it's a different tab
-      if (incomingTabId && p.tabId && incomingTabId !== p.tabId) {
+      if (incomingTabId !== p.tabId) {
         return true; // Different tab, replace
       }
-      
-      // Check if this is likely a post-restart scenario
-      const isPostRestart = p.disconnectTime && (Date.now() - p.disconnectTime) < 60000;
-      return !isPostRestart; // Replace if not post-restart
     }
     return false;
   }
@@ -270,9 +237,9 @@ export class GamePartyState {
     }
   }
 
-  private async cleanupOrphanedPartyAfter24h(): Promise<boolean> {
-    if (!this.gameState || this.gameState.gameStarted) {
-      return false;
+  private async cleanupOrphanedPartyAfter24h() {
+    if (!this.gameState) {
+      return;
     }
 
     const allDisconnected = this.gameState.players.every(p => p.connected === false);
@@ -295,10 +262,10 @@ export class GamePartyState {
       }
       this.connections.clear();
       
-      return true; // Indicates cleanup was performed
+      if (this.gameState.gameStarted) {
+        await this.dbManager.markGameAsInactive(this.partyId);
+      }
     }
-    
-    return false; // No cleanup needed
   }
 
   broadcastGameState(options: { gameStarting?: boolean } = {}) {
@@ -392,20 +359,6 @@ export class GamePartyState {
       // Cleanup orphaned parties after 24 hours of inactivity
       this.cleanupOrphanedPartyAfter24h().catch(console.error);
     }, 30000);
-  }
-
-  async saveGameStateToD1() {
-    if (!this.gameState) return;
-    this.env.DB.prepare(
-      `INSERT INTO games (party_id, game_id, state_json, status, updated_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(party_id) DO UPDATE SET game_id=excluded.game_id, state_json=excluded.state_json, status=excluded.status, updated_at=excluded.updated_at`
-    ).bind(
-      this.partyId,
-      this.gameState.gameId,
-      JSON.stringify(this.gameState),
-      'active',
-      new Date().toISOString()
-    ).run();
   }
 }
 

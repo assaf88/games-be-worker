@@ -4,7 +4,7 @@ import { Player } from '../interfaces/Player';
 export class AvalonGameHandler implements GameHandler {
   async handleGameMessage(data: any, player: Player | null, partyState: any): Promise<void> {
     if (!partyState.gameState || !player) return;
-
+    
     // Handle start_game action (only host can start) - Avalon specific
     if (data && data.action === 'start_game' && typeof player.id === 'string' && partyState.hostId && player.id === partyState.hostId) {
       if (partyState.gameState) {
@@ -21,11 +21,10 @@ export class AvalonGameHandler implements GameHandler {
         // Re-apply sorted order to gameState.players
         partyState.gameState.players = sorted;
         partyState.gameState.gameStarted = true;
-        // Save to DB only on start, and do NOT include hostId/firstHostId in the saved state
-        await partyState.saveGameStateToD1();
+
+        await partyState.dbManager.saveGameStateToD1(partyState.partyId, partyState.gameId, partyState.gameState);
         partyState.broadcastGameState({ gameStarting: true });
       }
-      return;
     }
 
     // Handle update_order action - Avalon specific
@@ -38,12 +37,14 @@ export class AvalonGameHandler implements GameHandler {
             player.order = update.order;
           }
         }
-        // Save to storage and DB
-        await partyState.state.storage.put('gameState', partyState.gameState);
-        await partyState.saveGameStateToD1();
+        
+        // await partyState.state.storage.put('gameState', partyState.gameState);
+        await partyState.dbManager.saveGameStateToD1(partyState.partyId, partyState.gameId, partyState.gameState);
         partyState.broadcastGameState();
       }
-      return;
     }
+
+    await partyState.state.storage.put('gameState', partyState.gameState);//save gameState to storage for server restarts
+
   }
 } 
