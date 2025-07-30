@@ -27,105 +27,111 @@ function getGameIdAndPartyCodeFromUrl(url: URL): { gameId: string | null, partyC
 
 export { GamePartyState };
 
-export default {
-  async fetch(request, env, ctx) {
-    const url = new URL(request.url);
-  
-    if (request.method === 'OPTIONS') {
-      return new Response(null, {
-        headers: {
-          'Access-Control-Allow-Origin': '*',
-          'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type',
-        },
-      });
-    }
+const worker: ExportedHandler<Env> = {
+	async fetch(request, env, ctx) {
+		const url = new URL(request.url);
 
-    // Handle party creation for specific games
-    const createPartyMatch = url.pathname.match(/\/game\/(\w+)\/create-party/);
-    if (createPartyMatch && request.method === 'POST') {
-      const gameId = createPartyMatch[1];
-      
-      // Validate game type
-      if (!GameHandlerFactory.isValidGameId(gameId)) {
-        return new Response(JSON.stringify({ error: `Game type '${gameId}' not supported` }), { 
-          status: 404, 
-          headers: { 'Content-Type': 'application/json' } 
-        });
-      }
+		if (request.method === 'OPTIONS') {
+			return new Response(null, {
+				headers: {
+					'Access-Control-Allow-Origin': '*',
+					'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+					'Access-Control-Allow-Headers': 'Content-Type',
+				},
+			});
+		}
 
-      const { id, name } = await request.json() as { id: string, name: string };
-      
-      // Fetch all existing party_ids from D1 (started games)
-      const dbManager = new DatabaseManager(env);
-      const existingIds = new Set(await dbManager.getAllPartyIds());
-      
-      // Combine D1 results with in-memory active codes
-      const allTakenIds = new Set([...existingIds, ...activePartyCodes]);
-      
-      // Generate a unique 4-digit party_code
-      let partyId;
-      let partyCode;
-      let attempts = 0;
-      const maxAttempts = 20;
-      do {
-        partyCode = (Math.floor(1000 + Math.random() * 9000)).toString();
-        partyId = `${gameId}-${partyCode}`;
-        attempts++;
-      } while (allTakenIds.has(partyId) && attempts < maxAttempts);
-      
-      if (allTakenIds.has(partyId)) {
-        return new Response(JSON.stringify({ error: 'Failed to create party. Please try again.' }), { status: 500 });
-      }
-      
-      // Add to in-memory tracking
-      activePartyCodes.add(partyId);
+		// Handle party creation for specific games
+		const createPartyMatch = url.pathname.match(/\/game\/(\w+)\/create-party/);
+		if (createPartyMatch && request.method === 'POST') {
+			const gameId = createPartyMatch[1];
 
-      // Create Durable Object and initialize game state
-      const idObj = env.PARTY_STATE.idFromName(partyId);
-      const stub = env.PARTY_STATE.get(idObj);
-      
-      // Send an internal request to initialize the party with the creator
-      await stub.fetch('https://internal/init', {
-        method: 'POST',
-        body: JSON.stringify({ id, name, partyCode, gameId })
-      });
-      
-      // Save to D1 immediately (the Durable Object will handle it)
-      return new Response(JSON.stringify({ partyCode }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
+			// Validate game type
+			if (!GameHandlerFactory.isValidGameId(gameId)) {
+				return new Response(JSON.stringify({error: `Game type '${gameId}' not supported`}), {
+					status: 404,
+					headers: {'Content-Type': 'application/json'}
+				});
+			}
 
-    // Handle cleanup requests from Durable Objects
-    if (url.pathname === '/cleanup-party' && request.method === 'POST') {
-      try {
-        const { partyId } = await request.json() as { partyId: string };
-        activePartyCodes.delete(partyId);
-        return new Response('OK', { status: 200 });
-      } catch (e) {
-        return new Response('Bad Request', { status: 400 });
-      }
-    }
+			const {id, name} = await request.json() as { id: string, name: string };
 
-    // Handle WebSocket connections for specific games
-    if (request.headers.get('upgrade') === 'websocket') {
-      const { gameId, partyCode } = getGameIdAndPartyCodeFromUrl(url);
-      
-      if (!gameId || !partyCode) {
-        return new Response('Invalid game or party code', { status: 400 });
-      }
-      
-      // Validate game type
-      if (!GameHandlerFactory.isValidGameId(gameId)) {
-        return new Response(`Game type '${gameId}' not supported`, { status: 404 });
-      }
-      
-      const partyId = `${gameId}-${partyCode}`;
-      const id = env.PARTY_STATE.idFromName(partyId);
-      const obj = env.PARTY_STATE.get(id);
-      return obj.fetch(request);
-    }
+			// Fetch all existing party_ids from D1 (started games)
+			const dbManager = new DatabaseManager(env);
+			const existingIds = new Set(await dbManager.getAllPartyIds());
 
-    return new Response('Not found', { status: 404 });
-  },
-  GamePartyState,  // This was the correct way to export Durable Objects
-} satisfies ExportedHandler<Env> & { GamePartyState: typeof GamePartyState };
+			// Combine D1 results with in-memory active codes
+			const allTakenIds = new Set([...existingIds, ...activePartyCodes]);
+
+			// Generate a unique 4-digit party_code
+			let partyId;
+			let partyCode;
+			let attempts = 0;
+			const maxAttempts = 20;
+			do {
+				partyCode = (Math.floor(1000 + Math.random() * 9000)).toString();
+				partyId = `${gameId}-${partyCode}`;
+				attempts++;
+			} while (allTakenIds.has(partyId) && attempts < maxAttempts);
+
+			if (allTakenIds.has(partyId)) {
+				return new Response(JSON.stringify({error: 'Failed to create party. Please try again.'}), {status: 500});
+			}
+
+			// Add to in-memory tracking
+			activePartyCodes.add(partyId);
+
+			// Create Durable Object and initialize game state
+			const idObj = env.PARTY_STATE.idFromName(partyId);
+			const stub = env.PARTY_STATE.get(idObj);
+
+			// Send an internal request to initialize the party with the creator
+			await stub.fetch('https://internal/init', {
+				method: 'POST',
+				body: JSON.stringify({id, name, partyCode, gameId})
+			});
+
+			// Save to D1 immediately (the Durable Object will handle it)
+			return new Response(JSON.stringify({partyCode}), {
+				status: 200,
+				headers: {'Content-Type': 'application/json'}
+			});
+		}
+
+		// Handle cleanup requests from Durable Objects
+		if (url.pathname === '/cleanup-party' && request.method === 'POST') {
+			try {
+				const {partyId} = await request.json() as { partyId: string };
+				activePartyCodes.delete(partyId);
+				return new Response('OK', {status: 200});
+			} catch (e) {
+				return new Response('Bad Request', {status: 400});
+			}
+		}
+
+		// Handle WebSocket connections for specific games
+		if (request.headers.get('upgrade') === 'websocket') {
+			const {gameId, partyCode} = getGameIdAndPartyCodeFromUrl(url);
+
+			if (!gameId || !partyCode) {
+				return new Response('Invalid game or party code', {status: 400});
+			}
+
+			// Validate game type
+			if (!GameHandlerFactory.isValidGameId(gameId)) {
+				return new Response(`Game type '${gameId}' not supported`, {status: 404});
+			}
+
+			const partyId = `${gameId}-${partyCode}`;
+			const id = env.PARTY_STATE.idFromName(partyId);
+			const obj = env.PARTY_STATE.get(id);
+			return obj.fetch(request);
+		}
+
+		return new Response('Not found', {status: 404});
+	}
+//   ,
+//   GamePartyState,  // This was the correct way to export Durable Objects
+// } satisfies ExportedHandler<Env> & { GamePartyState: typeof GamePartyState };
+}
+export default worker;
