@@ -10,7 +10,10 @@ bindings = [{ name = "PARTY_STATE", class_name = "GamePartyState" }]
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = [ "GamePartyState" ]
+new_sqlite_classes = ["PartyState"]
+[[migrations]]
+tag = "v2"
+renamed_classes = [{ from = "PartyState", to = "GamePartyState" }]
 
 [[d1_databases]]
 binding = "DB"
