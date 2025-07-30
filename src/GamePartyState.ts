@@ -23,97 +23,6 @@ export class GamePartyState {
     this.startPingInterval();
   }
 
-  private async loadGameStateFromD1(): Promise<boolean> {
-    const result = await this.env.DB.prepare('SELECT state_json FROM games WHERE party_id = ? AND status = ? LIMIT 1')
-      .bind(this.partyId, 'active').first();
-    
-    if (result && result.state_json) {
-      this.gameState = JSON.parse(result.state_json);
-      await this.state.storage.put('gameState', this.gameState);
-      if (!this.gameHandler && this.gameState) {
-        this.gameHandler = GameHandlerFactory.createGameHandler(this.gameState.gameId);
-        this.gameId = this.gameState.gameId;
-      }
-      return true;
-    }
-    return false;
-  }
-
-  private sendErrorAndClose(server: WebSocket, reason: string): void {
-    try {
-      server.send(JSON.stringify({ action: 'error', reason }));
-    } catch (e) {}
-    try { server.close(); } catch (e) {}
-  }
-
-  private cleanupStaleConnections(playerId: string): void {
-    for (const [ws, p] of this.connections.entries()) {
-      if (p && p.id === playerId && ws.readyState !== 1) {
-        this.connections.delete(ws);
-      }
-    }
-  }
-
-  private shouldReplaceConnection(ws: WebSocket, p: Player, incomingTabId?: string): boolean {
-    if (ws.readyState === 3) return true; // Closed connection
-    
-    if (ws.readyState === 1) {
-      // If we have tab IDs, only replace if it's a different tab
-      if (incomingTabId && p.tabId && incomingTabId !== p.tabId) {
-        return true; // Different tab, replace
-      }
-      
-      // Check if this is likely a post-restart scenario
-      const isPostRestart = p.disconnectTime && (Date.now() - p.disconnectTime) < 60000;
-      return !isPostRestart; // Replace if not post-restart
-    }
-    return false;
-  }
-
-  private updateHostId(): void {
-    if (this.firstHostId && this.gameState?.players?.some(p => p.id === this.firstHostId)) {
-      this.hostId = this.firstHostId;
-    } else if (this.gameState?.players && this.gameState.players.length > 0) {
-      const connectedPlayer = this.gameState.players.find(p => 
-        Array.from(this.connections.values()).some(connP => connP.id === p.id)
-      );
-      this.hostId = connectedPlayer?.id || null;
-    } else {
-      this.hostId = null;
-    }
-  }
-
-  private async cleanupOrphanedPartyAfter24h(): Promise<boolean> {
-    if (!this.gameState || this.gameState.gameStarted) {
-      return false;
-    }
-
-    const allDisconnected = this.gameState.players.every(p => p.connected === false);
-    const timeSinceLastAccess = Date.now() - this.lastAccess;
-    const twentyFourHours = 24 * 60 * 60 * 1000;
-    
-    if (allDisconnected && timeSinceLastAccess > twentyFourHours) {
-      // Clear storage and let DO be garbage collected
-      await this.state.storage.deleteAll();
-      
-      // Stop ping interval
-      if (this.pingInterval) {
-        clearInterval(this.pingInterval);
-        this.pingInterval = null;
-      }
-      
-      // Close all connections
-      for (const [ws, p] of this.connections.entries()) {
-        try { ws.close(); } catch {}
-      }
-      this.connections.clear();
-      
-      return true; // Indicates cleanup was performed
-    }
-    
-    return false; // No cleanup needed
-  }
-
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
         
@@ -298,6 +207,100 @@ export class GamePartyState {
     return new Response('Expected websocket', { status: 400 });
   }
 
+  
+  /////HELPER FUNCTIONS/////
+
+  private async loadGameStateFromD1(): Promise<boolean> {
+    const result = await this.env.DB.prepare('SELECT state_json FROM games WHERE party_id = ? AND status = ? LIMIT 1')
+      .bind(this.partyId, 'active').first();
+    
+    if (result && result.state_json) {
+      this.gameState = JSON.parse(result.state_json);
+      await this.state.storage.put('gameState', this.gameState);
+      if (!this.gameHandler && this.gameState) {
+        this.gameHandler = GameHandlerFactory.createGameHandler(this.gameState.gameId);
+        this.gameId = this.gameState.gameId;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  private sendErrorAndClose(server: WebSocket, reason: string): void {
+    try {
+      server.send(JSON.stringify({ action: 'error', reason }));
+    } catch (e) {}
+    try { server.close(); } catch (e) {}
+  }
+
+  private cleanupStaleConnections(playerId: string): void {
+    for (const [ws, p] of this.connections.entries()) {
+      if (p && p.id === playerId && ws.readyState !== 1) {
+        this.connections.delete(ws);
+      }
+    }
+  }
+
+  private shouldReplaceConnection(ws: WebSocket, p: Player, incomingTabId?: string): boolean {
+    if (ws.readyState === 3) return true; // Closed connection
+    
+    if (ws.readyState === 1) {
+      // If we have tab IDs, only replace if it's a different tab
+      if (incomingTabId && p.tabId && incomingTabId !== p.tabId) {
+        return true; // Different tab, replace
+      }
+      
+      // Check if this is likely a post-restart scenario
+      const isPostRestart = p.disconnectTime && (Date.now() - p.disconnectTime) < 60000;
+      return !isPostRestart; // Replace if not post-restart
+    }
+    return false;
+  }
+
+  private updateHostId(): void {
+    if (this.firstHostId && this.gameState?.players?.some(p => p.id === this.firstHostId)) {
+      this.hostId = this.firstHostId;
+    } else if (this.gameState?.players && this.gameState.players.length > 0) {
+      const connectedPlayer = this.gameState.players.find(p => 
+        Array.from(this.connections.values()).some(connP => connP.id === p.id)
+      );
+      this.hostId = connectedPlayer?.id || null;
+    } else {
+      this.hostId = null;
+    }
+  }
+
+  private async cleanupOrphanedPartyAfter24h(): Promise<boolean> {
+    if (!this.gameState || this.gameState.gameStarted) {
+      return false;
+    }
+
+    const allDisconnected = this.gameState.players.every(p => p.connected === false);
+    const timeSinceLastAccess = Date.now() - this.lastAccess;
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+    
+    if (allDisconnected && timeSinceLastAccess > twentyFourHours) {
+      // Clear storage and let DO be garbage collected
+      await this.state.storage.deleteAll();
+      
+      // Stop ping interval
+      if (this.pingInterval) {
+        clearInterval(this.pingInterval);
+        this.pingInterval = null;
+      }
+      
+      // Close all connections
+      for (const [ws, p] of this.connections.entries()) {
+        try { ws.close(); } catch {}
+      }
+      this.connections.clear();
+      
+      return true; // Indicates cleanup was performed
+    }
+    
+    return false; // No cleanup needed
+  }
+
   broadcastGameState(options: { gameStarting?: boolean } = {}) {
     if (!this.gameState) return;
     
@@ -381,15 +384,13 @@ export class GamePartyState {
       //   }
       // }
       
-      // Cleanup orphaned parties after 24 hours of inactivity
-      const cleanupPerformed = await this.cleanupOrphanedPartyAfter24h();
-      if (cleanupPerformed) {
-        return; // Exit the ping interval
-      }
       
       if (stateChanged) {
         this.broadcastGameState();
       }
+
+      // Cleanup orphaned parties after 24 hours of inactivity
+      this.cleanupOrphanedPartyAfter24h().catch(console.error);
     }, 30000);
   }
 
