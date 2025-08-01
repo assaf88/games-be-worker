@@ -46,6 +46,7 @@ export class GamePartyState {
           };
           this.firstHostId = id;
           this.hostId = id;
+          await this.state.storage.put('firstHostId', id);
           await this.state.storage.put('gameState', this.gameState);
         }
         return new Response('OK', { status: 200 });
@@ -67,8 +68,14 @@ export class GamePartyState {
         this.partyId = `${this.gameId}-${this.partyCode}`;
       }
 
+      if (!this.firstHostId) {
+        this.firstHostId = await this.state.storage.get<string>('firstHostId') || null;
+      }
+
       // Load game state from storage
-      this.gameState = await this.state.storage.get('gameState');
+      if (!this.gameState) {
+        this.gameState = await this.state.storage.get<GameState>('gameState') || null;
+      }
       
       if (!this.gameState) {
         const gameState = await this.dbManager.loadGameStateFromD1(this.partyId);
