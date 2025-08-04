@@ -7,8 +7,8 @@ export class DatabaseManager {
 
   async saveGameStateToD1(partyId: string, gameId: string, gameState: any): Promise<void> {
     try {
-      console.log('[DatabaseManager] Saving gameState:', JSON.stringify(gameState, null, 2));
-  
+      //console.log('[DatabaseManager] Saving gameState:', JSON.stringify(gameState, null, 2));
+
       await this.env.DB.prepare(
         `INSERT INTO games (party_id, game_id, state_json, status, updated_at) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(party_id) DO UPDATE SET game_id=excluded.game_id, state_json=excluded.state_json, status=excluded.status, updated_at=excluded.updated_at`
@@ -35,6 +35,7 @@ export class DatabaseManager {
         partyId
       ).run();
     } catch (error) {
+
       console.error('[DatabaseManager] Error marking game as inactive:', error);
       throw error;
     }
@@ -45,7 +46,7 @@ export class DatabaseManager {
     try {
       const result = await this.env.DB.prepare('SELECT state_json FROM games WHERE party_id = ? AND status = ? LIMIT 1')
         .bind(partyId, 'active').first();
-      
+
       if (result?.state_json) {
         return JSON.parse(result.state_json);
       }
@@ -65,4 +66,4 @@ export class DatabaseManager {
       throw error;
     }
   }
-} 
+}
