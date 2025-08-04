@@ -316,7 +316,13 @@ export class GamePartyState {
           // Send ping to connected player
           for (const [ws, p] of this.connections.entries()) {
             if (p.id === player.id) {
-              try { ws.send(JSON.stringify({ action: 'ping' })); } catch {}
+              const serverVersion = this.env.appVersion || '1.3.0';
+              try { 
+                ws.send(JSON.stringify({ 
+                  action: 'ping',
+                  appVersion: serverVersion
+                })); 
+              } catch {}
             } 
           }
         }

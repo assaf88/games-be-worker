@@ -2,6 +2,9 @@ name = "falling-cell-3243"
 main = "src/index.ts"
 compatibility_date = "2025-07-10"
 
+[vars]
+appVersion = "1.6.0"
+
 [observability.logs]
 enabled = true
 
