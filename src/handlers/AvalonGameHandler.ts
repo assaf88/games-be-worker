@@ -1,13 +1,14 @@
 import { GameHandler } from './GameHandler';
 import { Player } from '../interfaces/Player';
-import { AvalonState } from '../interfaces/GameState';
+import { AvalonState, AvalonSetupState } from '../interfaces/GameState';
+import { AvalonGameLogic } from '../gameLogic/AvalonGameLogic';
 
 export class AvalonGameHandler implements GameHandler {
   async handleGameMessage(data: any, player: Player | null, partyState: any): Promise<void> {
     if (!partyState.gameState || !player) {
       return;
     }
-    
+
     // Handle start_game action (only host can start) - Avalon specific
     if (data && data.action === 'start_game' && typeof player.id === 'string' && partyState.hostId && player.id === partyState.hostId) {
       const playerOrderMap = new Map<string, number>();
@@ -29,19 +30,15 @@ export class AvalonGameHandler implements GameHandler {
 
       partyState.gameState.gameStarted = true;
 
-      // Initialize AvalonState with setup data if provided
-      if (data.selectedCharacters && data.firstPlayerFlagActive !== undefined) {
-        partyState.gameState.state = {
-          specialIds: data.selectedCharacters,
-          isPlayer1Lead1st: data.firstPlayerFlagActive
-        } as AvalonState;
-      } else {
-        // Default Avalon state if no setup data provided
-        partyState.gameState.state = {
-          specialIds: ['merlin', 'assassin'],
-          isPlayer1Lead1st: true
-        } as AvalonState;
-      }
+      // Get setup state from current state
+      const setupState: AvalonSetupState = {
+        specialIds: data.selectedCharacters || ['merlin', 'assassin'],
+        isPlayer1Lead1st: data.firstPlayerFlagActive !== undefined ? data.firstPlayerFlagActive : true
+      };
+
+      // Initialize the actual game state using AvalonGameLogic
+      const gameState = AvalonGameLogic.initializeGame(partyState.gameState.players, setupState);
+      partyState.gameState.state = gameState;
 
       partyState.dbManager.saveGameStateToD1(partyState.partyId, partyState.gameId, partyState.gameState);
       partyState.broadcastGameState({ gameStarting: true });
@@ -56,36 +53,90 @@ export class AvalonGameHandler implements GameHandler {
           player.order = update.order;
         }
       }
-      
-      // await partyState.state.storage.put('gameState', partyState.gameState);
+
       partyState.broadcastGameState();
     }
 
     // Handle avalon_setup_update action - Avalon specific
-    if (data && data.action === 'avalon_setup_update' && typeof player.id === 'string' /*&& partyState.hostId && player.id === partyState.hostId*/) {
+    if (data && data.action === 'avalon_setup_update' && typeof player.id === 'string' && partyState.hostId && player.id === partyState.hostId) {
       if (!partyState.gameState.state) {
         partyState.gameState.state = {
           specialIds: ['merlin', 'assassin'], // Default selected characters
           isPlayer1Lead1st: true // Default flag state
-        } as AvalonState;
+        } as AvalonSetupState;
       }
 
-      const avalonState = partyState.gameState.state as AvalonState;
-      
+      const setupState = partyState.gameState.state as AvalonSetupState;
+
       // Update special character selections
       if (data.selectedCharacters && Array.isArray(data.selectedCharacters)) {
-        avalonState.specialIds = data.selectedCharacters;
+        setupState.specialIds = data.selectedCharacters;
       }
-      
+
       // Update flag state
       if (typeof data.firstPlayerFlagActive === 'boolean') {
-        avalonState.isPlayer1Lead1st = data.firstPlayerFlagActive;
+        setupState.isPlayer1Lead1st = data.firstPlayerFlagActive;
       }
-      
+
       partyState.broadcastGameState();
     }
 
-    await partyState.state.storage.put('gameState', partyState.gameState);//save gameState to storage for server restarts
+    // Handle in-game actions (only after game has started)
+    if (partyState.gameState.gameStarted && partyState.gameState.state && 'phase' in partyState.gameState.state) {
+      const gameState = partyState.gameState.state as AvalonState;
 
+      // Handle quest team selection
+      if (data && data.action === 'select_quest_team' && gameState.phase === 'quest' && player.id === gameState.questLeader) {
+        try {
+          const newGameState = AvalonGameLogic.handleQuestTeamSelection(
+            gameState,
+            data.selectedPlayers,
+            partyState.gameState.players.length,
+            partyState.gameState.players
+          );
+          partyState.gameState.state = newGameState;
+          partyState.broadcastGameState();
+        } catch (error) {
+          console.error('Quest team selection error:', error);
+        }
+      }
+
+      // Handle quest voting
+      if (data && data.action === 'quest_vote' && gameState.phase === 'voting') {
+        const newGameState = AvalonGameLogic.handleQuestVoteAndCheckComplete(gameState, player.id, data.approve, partyState.gameState.players);
+        partyState.gameState.state = newGameState;
+        partyState.broadcastGameState();
+      }
+
+      // Handle quest result submission
+      if (data && data.action === 'quest_result' && gameState.phase === 'results' && gameState.questTeam.includes(player.id)) {
+        const newGameState = AvalonGameLogic.handleQuestResult(gameState, player.id, data.success, partyState.gameState.players);
+        partyState.gameState.state = newGameState;
+
+        // Check if all results are in
+        const updatedGameState = AvalonGameLogic.checkResultsComplete(newGameState, partyState.gameState.players);
+        partyState.gameState.state = updatedGameState;
+        partyState.broadcastGameState();
+      }
+
+      // Handle host revealing results. FE sends this message once after the host has revealed the results.
+      if (data && data.action === 'reveal_results' && gameState.phase === 'revealing' && player.id === partyState.hostId) {
+        const updatedGameState = AvalonGameLogic.nextQuest(gameState, partyState.gameState.players);
+        partyState.gameState.state = updatedGameState;
+        partyState.broadcastGameState();
+      }
+
+      // Handle assassination attempt
+      if (data && data.action === 'assassinate' && gameState.phase === 'assassinating') {
+        const playerRole = gameState.playerRoles.get(player.id);
+        if (playerRole === 'assassin') {
+          const updatedGameState = AvalonGameLogic.handleAssassination(gameState, data.targetPlayerId);
+          partyState.gameState.state = updatedGameState;
+          partyState.broadcastGameState();
+        }
+      }
+    }
+
+    await partyState.state.storage.put('gameState', partyState.gameState);//save gameState to storage for server restarts
   }
-} 
+}

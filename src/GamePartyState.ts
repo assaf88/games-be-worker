@@ -2,6 +2,7 @@ import { GameState } from './interfaces/GameState';
 import { Player } from './interfaces/Player';
 import { GameHandlerFactory } from './handlers/GameHandlerFactory';
 import { DatabaseManager } from './DatabaseManager';
+import { AvalonGameLogic } from './gameLogic/AvalonGameLogic';
 
 export class GamePartyState {
   state: DurableObjectState;
@@ -28,15 +29,15 @@ export class GamePartyState {
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
-        
+
     if (request.method === 'POST' && url.pathname === '/init') {
       try {
         const { id, name, partyCode, gameId } = await request.json() as { id: string, name: string, partyCode: string, gameId: string };
-        
+
         if (!this.gameHandler) {
           this.gameHandler = GameHandlerFactory.createGameHandler(gameId);
         }
-        
+
         if (!this.gameState) {
           this.gameState = {
             gameId,
@@ -60,7 +61,7 @@ export class GamePartyState {
       let player: Player | null = null;
 
       server.accept();
-      
+
       const urlParts = url.pathname.match(/\/game\/(\w+)\/party\/(\w+)/);
       if (urlParts) {
         this.gameId = urlParts[1];
@@ -76,7 +77,7 @@ export class GamePartyState {
       if (!this.gameState) {
         this.gameState = await this.state.storage.get<GameState>('gameState') || null;
       }
-      
+
       if (!this.gameState) {
         const gameState = await this.dbManager.loadGameStateFromD1(this.partyId);
         if (gameState) {
@@ -100,20 +101,20 @@ export class GamePartyState {
             // console.log(`[DEBUG] Register attempt - Party: ${this.partyCode}, GameStarted: ${this.gameState?.gameStarted}, Player: ${data.id}, GameId: ${this.gameState?.gameId}`);
             this.lastAccess = Date.now(); // Update last access
             this.cleanupStaleConnections(data.id);
-            
+
             // Prevent joining if game already started and not in players
-            if (this.gameState?.gameId === 'avalon' && this.gameState.gameStarted && 
+            if (this.gameState?.gameId === 'avalon' && this.gameState.gameStarted &&
                 !this.gameState.players.some(p => p.id === data.id)) {
               this.sendErrorAndClose(server, 'game_started');
               return;
             }
-            
+
             // Handle connection replacement using client-provided tabId
             const incomingTabId = data.tabId; // Client sends tabId from sessionStorage
             for (const [ws, p] of this.connections.entries()) {
               if (p && p.id === data.id && this.shouldReplaceConnection(ws, p, incomingTabId)) {
-                ws.send(JSON.stringify({ 
-                  action: 'error', 
+                ws.send(JSON.stringify({
+                  action: 'error',
                   reason: 'connection_replaced',
                   message: 'A newer tab has connected to this party. You can close this page.'
                 }));
@@ -121,15 +122,15 @@ export class GamePartyState {
                 this.connections.delete(ws);
               }
             }
-            
-            player = { 
-              id: data.id, 
-              name: data.name, 
+
+            player = {
+              id: data.id,
+              name: data.name,
               connected: true,
               tabId: incomingTabId // Store the tab ID to distinguish between tabs
             };
             this.connections.set(server, player);
-            
+
             // Add player if not already present
             if (this.gameState && !this.gameState.players.some(p => p.id === data.id)) {
               this.gameState.players.push(player);
@@ -143,30 +144,30 @@ export class GamePartyState {
                 p.tabId = incomingTabId; // Update tab ID
               }
             }
-            
+
             if (!this.hostId && player?.id) {
               this.hostId = player.id;
             }
-            
+
             this.broadcastGameState();
             return;
           }
-          
+
           // Handle pong from client
           if (data?.action === 'pong' && player?.id) {
             this.lastAccess = Date.now(); // Update last access
-            const p = this.gameState?.players.find(pl => pl.id === player.id);
+            const p = this.gameState?.players.find(pl => pl.id === player?.id);
             if (p) {
               p.connected = true;
               p.disconnectTime = undefined;
             }
             return;
           }
-          
+
           // Handle game-specific messages
           if (this.gameHandler) {
             await this.gameHandler.handleGameMessage(data, player, this);
-          } 
+          }
         } catch (error) {
           // Ignore non-JSON messages
         }
@@ -175,7 +176,7 @@ export class GamePartyState {
       const cleanup = async () => {
         const player = this.connections.get(server);
         this.connections.delete(server);
-        
+
         if (this.gameState && player) {
           if (this.gameState.gameStarted) {
             const p = this.gameState.players.find(p => p.id === player.id);
@@ -195,7 +196,7 @@ export class GamePartyState {
       server.addEventListener('close', cleanup);
       server.addEventListener('error', cleanup);
 
-      
+
       return new Response(null, { status: 101, webSocket: client });
     }
     return new Response('Expected websocket', { status: 400 });
@@ -221,7 +222,7 @@ export class GamePartyState {
 
   private shouldReplaceConnection(ws: WebSocket, p: Player, incomingTabId?: string): boolean {
     if (ws.readyState === 3) return true; // Closed connection
-    
+
     if (ws.readyState === 1) {
       // If we have tab IDs, only replace if it's a different tab
       if (incomingTabId !== p.tabId) {
@@ -235,7 +236,7 @@ export class GamePartyState {
     if (this.firstHostId && this.gameState?.players?.some(p => p.id === this.firstHostId)) {
       this.hostId = this.firstHostId;
     } else if (this.gameState?.players && this.gameState.players.length > 0) {
-      const connectedPlayer = this.gameState.players.find(p => 
+      const connectedPlayer = this.gameState.players.find(p =>
         Array.from(this.connections.values()).some(connP => connP.id === p.id)
       );
       this.hostId = connectedPlayer?.id || null;
@@ -252,23 +253,23 @@ export class GamePartyState {
     const allDisconnected = this.gameState.players.every(p => p.connected === false);
     const timeSinceLastAccess = Date.now() - this.lastAccess;
     const twentyFourHours = 24 * 60 * 60 * 1000;
-    
+
     if (allDisconnected && timeSinceLastAccess > twentyFourHours) {
       // Clear storage and let DO be garbage collected
       await this.state.storage.deleteAll();
-      
+
       // Stop ping interval
       if (this.pingInterval) {
         clearInterval(this.pingInterval);
         this.pingInterval = null;
       }
-      
+
       // Close all connections
       for (const [ws, p] of this.connections.entries()) {
         try { ws.close(); } catch {}
       }
       this.connections.clear();
-      
+
       if (this.gameState.gameStarted) {
         await this.dbManager.markGameAsInactive(this.partyId);
       }
@@ -277,12 +278,19 @@ export class GamePartyState {
 
   broadcastGameState(options: { gameStarting?: boolean } = {}) {
     if (!this.gameState) return;
-    
+
+    // For Avalon game, send player-specific views
+    if (this.gameId === 'avalon' && this.gameState.gameStarted && this.gameState.state && 'phase' in this.gameState.state) {
+      this.broadcastAvalonGameState(options);
+      return;
+    }
+
+    // Default broadcast for other games or pre-game state
     const state: any = { action: 'update_state', ...this.gameState, hostId: this.hostId };
     if (options.gameStarting) {
       state.gameStarting = true;
     }
-    
+
     const msg = JSON.stringify(state, (key, value) => {
       if (key === 'tabId') return undefined;
       return value;
@@ -294,19 +302,66 @@ export class GamePartyState {
     }
   }
 
+  private broadcastAvalonGameState(options: { gameStarting?: boolean } = {}) {
+    if (!this.gameState || !this.gameState.state) return;
+
+    for (const [ws, player] of this.connections.entries()) {
+      if (ws.readyState === 1) {
+                 try {
+           // Get player-specific view
+           const playerView = AvalonGameLogic.getPlayerView(this.gameState.state as any, player.id, this.gameState.players);
+           const votesView = AvalonGameLogic.getVotesView(this.gameState.state as any, this.gameState.players);
+           const resultsView = AvalonGameLogic.getResultsView(this.gameState.state as any);
+
+           const state: any = {
+             action: 'update_state',
+             ...this.gameState,
+             ...playerView,
+             ...votesView,
+             ...resultsView,
+             hostId: this.hostId
+           };
+
+          if (options.gameStarting) {
+            state.gameStarting = true;
+          }
+
+          const msg = JSON.stringify(state, (key, value) => {
+            if (key === 'tabId') return undefined;
+            return value;
+          });
+
+          ws.send(msg);
+        } catch (error) {
+          console.error(`Error sending player view to ${player.id}:`, error);
+          // Fallback to default broadcast
+          const state: any = { action: 'update_state', ...this.gameState, hostId: this.hostId };
+          if (options.gameStarting) {
+            state.gameStarting = true;
+          }
+          const msg = JSON.stringify(state, (key, value) => {
+            if (key === 'tabId') return undefined;
+            return value;
+          });
+          ws.send(msg);
+        }
+      }
+    }
+  }
+
   startPingInterval() {
     if (this.pingInterval) return;
     this.pingInterval = setInterval(async () => {
       if (!this.gameState) return;
-      
+
       let stateChanged = false;
       for (const player of this.gameState.players) {
         const isConnected = Array.from(this.connections.values()).some(p => p.id === player.id);
-        
+
         if (!isConnected && player.connected !== false) {
           const now = Date.now();
           const gracePeriod = 30000;
-          
+
           if (!player.disconnectTime || (now - player.disconnectTime) > gracePeriod) {
             player.connected = false;
             player.disconnectTime = now;
@@ -317,17 +372,17 @@ export class GamePartyState {
           for (const [ws, p] of this.connections.entries()) {
             if (p.id === player.id) {
               const serverVersion = this.env.appVersion || '1.3.0';
-              try { 
-                ws.send(JSON.stringify({ 
+              try {
+                ws.send(JSON.stringify({
                   action: 'ping',
                   appVersion: serverVersion
-                })); 
+                }));
               } catch {}
-            } 
+            }
           }
         }
       }
-      
+
       // Remove players who have been disconnected for 60s (only if game not started)
       const now = Date.now();
       const removedIds: string[] = [];
@@ -339,7 +394,7 @@ export class GamePartyState {
         }
         return true;
       });
-      
+
       if (removedIds.length > 0) {
         for (const [ws, p] of this.connections.entries()) {
           if (removedIds.includes(p.id)) {
@@ -349,7 +404,7 @@ export class GamePartyState {
         }
         stateChanged = true;
       }
-      
+
       // Cleanup orphaned parties - MOST PROBABY REPLACED BY cleanupOrphanedPartyAfter24h BELOW. DO NOT REMOVE THIS!
       // if (this.gameState && !this.gameState.gameStarted && this.gameState.players.length === 0 && this.connections.size === 0) {
       //   fetch('https://internal/cleanup-party', {
@@ -357,14 +412,14 @@ export class GamePartyState {
       //     headers: { 'Content-Type': 'application/json' },
       //     body: JSON.stringify({ partyId: this.partyId })
       //   }).catch(console.error);
-        
+
       //   if (this.pingInterval) {
       //     clearInterval(this.pingInterval);
       //     this.pingInterval = null;
       //   }
       // }
-      
-      
+
+
       if (stateChanged) {
         this.broadcastGameState();
       }
@@ -375,4 +430,4 @@ export class GamePartyState {
   }
 }
 
-export default GamePartyState; 
+export default GamePartyState;
