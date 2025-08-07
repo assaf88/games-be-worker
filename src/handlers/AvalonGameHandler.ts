@@ -103,19 +103,17 @@ export class AvalonGameHandler implements GameHandler {
 
       // Handle quest voting
       if (data && data.action === 'quest_vote' && gameState.phase === 'voting') {
-        const newGameState = AvalonGameLogic.handleQuestVoteAndCheckComplete(gameState, player.id, data.approve, partyState.gameState.players);
-        partyState.gameState.state = newGameState;
+        const { newState, updatedPlayers } = AvalonGameLogic.handleQuestVoteAndCheckComplete(gameState, player.id, data.approve, partyState.gameState.players);
+        partyState.gameState.state = newState;
+        partyState.gameState.players = updatedPlayers;
         partyState.broadcastGameState();
       }
 
       // Handle quest result submission
       if (data && data.action === 'quest_result' && gameState.phase === 'results' && gameState.questTeam.includes(player.id)) {
-        const newGameState = AvalonGameLogic.handleQuestResult(gameState, player.id, data.success, partyState.gameState.players);
-        partyState.gameState.state = newGameState;
-
-        // Check if all results are in
-        const updatedGameState = AvalonGameLogic.checkResultsComplete(newGameState, partyState.gameState.players);
-        partyState.gameState.state = updatedGameState;
+        const { newState, updatedPlayers } = AvalonGameLogic.handleQuestResultAndCheckComplete(gameState, player.id, data.success, partyState.gameState.players);
+        partyState.gameState.state = newState;
+        partyState.gameState.players = updatedPlayers;
         partyState.broadcastGameState();
       }
 

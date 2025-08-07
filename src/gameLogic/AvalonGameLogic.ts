@@ -216,7 +216,7 @@ export class AvalonGameLogic {
   /**
    * Handle quest voting and check if all players have voted, transitioning state if so.
    */
-  static handleQuestVoteAndCheckComplete(gameState: AvalonState, playerId: string, vote: boolean, players: Player[]): AvalonState {
+  static handleQuestVoteAndCheckComplete(gameState: AvalonState, playerId: string, vote: boolean, players: Player[]): { newState: AvalonState, updatedPlayers: Player[] } {
     // Add/update the vote
     const newVotes = new Map(gameState.questVotes);
     newVotes.set(playerId, vote);
@@ -245,91 +245,104 @@ export class AvalonGameLogic {
         if (newSkips >= 5) {
           // Evil wins by quest rejection
           return {
-            ...gameState,
-            phase: 'end',
-            questSkips: newSkips,
-            instructionText: 'Evil wins! Too many quest rejections.'
+            newState: {
+              ...gameState,
+              phase: 'end',
+              questSkips: newSkips,
+              instructionText: 'Evil wins! Too many quest rejections.'
+            },
+            updatedPlayers
           };
         }
         // Quest rejected - move to next leader, same quest
         const currentLeaderOrder = players.find(p => p.id === gameState.questLeader)?.order || 1;
-        const nextLeader = players.find(p => p.order === (currentLeaderOrder + 1) % players.length)?.id || players[0].id;
+        const nextOrder = (currentLeaderOrder % players.length) + 1;
+        const nextLeader = players.find(p => p.order === nextOrder)?.id || players[0].id;
         return {
-          ...gameState,
-          questLeader: nextLeader,
-          questTeam: [],
-          questSkips: newSkips,
-          phase: 'quest',
-          instructionText: this.generateInstruction('quest', nextLeader, gameState.questNumber, players.length, undefined, players),
-          questVotes: new Map(),
-          questResults: []
+          newState: {
+            ...gameState,
+            questLeader: nextLeader,
+            questTeam: [],
+            questSkips: newSkips,
+            phase: 'quest',
+            instructionText: this.generateInstruction('quest', nextLeader, gameState.questNumber, players.length, undefined, players),
+            questVotes: new Map(),
+            questResults: []
+          },
+          updatedPlayers
         };
       }
       // Quest approved, move to results phase
       return {
-        ...gameState,
-        phase: 'results',
-        instructionText: this.generateInstruction('results', gameState.questLeader, gameState.questNumber, players.length, gameState.questTeam, players),
-        questVotes: newVotes
+        newState: {
+          ...gameState,
+          phase: 'results',
+          instructionText: this.generateInstruction('results', gameState.questLeader, gameState.questNumber, players.length, gameState.questTeam, players),
+          questVotes: newVotes
+        },
+        updatedPlayers
       };
     }
     // Not all have voted, keep voted:true for those who have voted
     return {
-      ...gameState,
-      questVotes: newVotes
+      newState: {
+        ...gameState,
+        questVotes: newVotes
+      },
+      updatedPlayers
     };
   }
 
   /**
-   * Handle quest result submission
+   * Handle quest result submission and check if all quest team members have submitted results
    */
-  static handleQuestResult(gameState: AvalonState, playerId: string, success: boolean, players: Player[]): AvalonState {
+  static handleQuestResultAndCheckComplete(gameState: AvalonState, playerId: string, success: boolean, players: Player[]): { newState: AvalonState, updatedPlayers: Player[] } {
+    // Add the result
     const newResults = [...gameState.questResults];
     newResults.push(success);
 
     // Update player decided status
-    const updatedPlayers = players.map(player => 
-      player.id === playerId 
-        ? { ...player, decided: true }
-        : player
+    const updatedPlayers = players.map(player =>
+      player.id === playerId ? { ...player, decided: true } : player
     );
 
-    return {
-      ...gameState,
-      questResults: newResults
-    };
-  }
-
-  /**
-   * Check if all quest team members have submitted results
-   */
-  static checkResultsComplete(gameState: AvalonState, players: Player[]): AvalonState {
-    if (gameState.questResults.length >= gameState.questTeam.length) {
+    // Check if all quest team members have submitted results
+    if (newResults.length === gameState.questTeam.length) {
       // Count results
       let successCount = 0;
       let failCount = 0;
-
-      for (const result of gameState.questResults) {
+      for (const result of newResults) {
         if (result) successCount++;
         else failCount++;
       }
-
       const requiredFails = getQuestFailRequirement(gameState.questTeam.length, gameState.questNumber);
       const questSuccess = failCount < requiredFails;
-
       // Update completed quests
       const newCompletedQuests = [...gameState.completedQuests];
       newCompletedQuests[gameState.questNumber - 1] = questSuccess;
-
+      // Randomize quest results for revealing phase
+      const shuffledResults = [...newResults].sort(() => Math.random() - 0.5);
+      // Clear decided status for all players
+      const resetPlayers = updatedPlayers.map(p => ({ ...p, decided: false }));
       return {
-        ...gameState,
-        completedQuests: newCompletedQuests,
-        phase: 'revealing',
-        instructionText: this.generateInstruction('revealing', gameState.questLeader, gameState.questNumber, gameState.questTeam.length, undefined, players)
+        newState: {
+          ...gameState,
+          completedQuests: newCompletedQuests,
+          phase: 'revealing',
+          instructionText: this.generateInstruction('revealing', gameState.questLeader, gameState.questNumber, gameState.questTeam.length, undefined, players),
+          questResults: shuffledResults
+        },
+        updatedPlayers: resetPlayers
       };
     }
-
-    return gameState;
+    // Not all have submitted results
+    return {
+      newState: {
+        ...gameState,
+        questResults: newResults
+      },
+      updatedPlayers
+    };
   }
 
   /**
