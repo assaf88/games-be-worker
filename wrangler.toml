@@ -25,7 +25,7 @@ renamed_classes = [{ from = "PartyState", to = "GamePartyState" }]
 # Add the Tracker DO in a new migration
 [[migrations]]
 tag = "v3"
-new_classes = ["Tracker"]
+new_sqlite_classes = ["Tracker"]
 
 [[d1_databases]]
 binding = "DB"
