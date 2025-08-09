@@ -3,6 +3,7 @@
 // To deploy: wrangler deploy (see package.json scripts)
 
 import GamePartyState from './GamePartyState';
+import Tracker from './Tracker';
 import { GameHandlerFactory } from './handlers/GameHandlerFactory';
 import { DatabaseManager } from './DatabaseManager';
 
@@ -25,7 +26,7 @@ function getGameIdAndPartyCodeFromUrl(url: URL): { gameId: string | null, partyC
   return { gameId: null, partyCode: null };
 }
 
-export { GamePartyState };
+export { GamePartyState, Tracker };
 
 const worker: ExportedHandler<Env> = {
 	async fetch(request, env, ctx) {
