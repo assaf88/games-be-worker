@@ -465,7 +465,7 @@ export class GamePartyState {
 
 			// Cleanup orphaned parties after 24 hours of inactivity
 			this.cleanupOrphanedPartyAfter24h().catch(console.error);
-		}, 30000);
+		}, 45000);
 	}
 }
 
