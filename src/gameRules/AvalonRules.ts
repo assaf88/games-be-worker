@@ -50,6 +50,10 @@ export const AVALON_RULES = {
       canSee: [] as string[], // Sees no one
       appearsAs: null
     },
+    minion: {
+      canSee: ['assassin', 'morgana', 'mordred', 'minion'] as string[], // All evils except oberon
+      appearsAs: 'minion'
+    },
     servant: {
       canSee: [] as string[], // Sees no one
       appearsAs: null

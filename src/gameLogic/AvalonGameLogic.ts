@@ -8,12 +8,17 @@ export class AvalonGameLogic {
    * Initialize the game state after start_game action
    */
   static initializeGame(players: Player[], setupState: AvalonSetupState): AvalonState {
+    // console.log(`[DEBUG] initializeGame called with ${players.length} players:`, players.map(p => ({ id: p.id, name: p.name })));
+    // console.log(`[DEBUG] setupState:`, setupState);
+
     const playerCount = players.length;
     const evilCount = getEvilPlayerCount(playerCount);
     const goodCount = getGoodPlayerCount(playerCount);
 
     // Assign roles to players
     const playerRoles = this.assignRoles(players, setupState.specialIds, evilCount, goodCount);
+    // console.log(`[DEBUG] After assignRoles - playerRoles size: ${playerRoles.size}`);
+    // console.log(`[DEBUG] After assignRoles - players with characterSex:`, players.filter(p => p.characterSex).map(p => ({ name: p.name, characterSex: p.characterSex })));
 
     // Determine first quest leader
     const questLeader = setupState.isPlayer1Lead1st
@@ -34,6 +39,7 @@ export class AvalonGameLogic {
       questResults: []
     };
 
+    // console.log(`[DEBUG] Created gameState with playerRoles size: ${gameState.playerRoles.size}`);
     return gameState;
   }
 
@@ -41,6 +47,8 @@ export class AvalonGameLogic {
    * Assign roles to players based on selected special characters
    */
   private static assignRoles(players: Player[], selectedSpecials: string[], evilCount: number, goodCount: number): Map<string, string> {
+    //console.log(`[DEBUG] assignRoles called with:`, { players: players.length, selectedSpecials, evilCount, goodCount });
+
     const playerRoles = new Map<string, string>();
     const shuffledPlayers = [...players].sort(() => Math.random() - 0.5);
 
@@ -48,9 +56,13 @@ export class AvalonGameLogic {
     const specialGood = selectedSpecials.filter(s => AVALON_RULES.goodCharacters.includes(s));
     const specialEvil = selectedSpecials.filter(s => AVALON_RULES.evilCharacters.includes(s));
 
+    //console.log(`[DEBUG] Special characters:`, { specialGood, specialEvil });
+
     // Calculate remaining roles needed
     const remainingGood = goodCount - specialGood.length;
     const remainingEvil = evilCount - specialEvil.length;
+
+    //console.log(`[DEBUG] Remaining roles:`, { remainingGood, remainingEvil });
 
     // Assign special characters first
     let playerIndex = 0;
@@ -59,6 +71,9 @@ export class AvalonGameLogic {
     for (const special of specialGood) {
       if (playerIndex < shuffledPlayers.length) {
         playerRoles.set(shuffledPlayers[playerIndex].id, special);
+        // Special characters don't need gender assignment
+        shuffledPlayers[playerIndex].characterSex = undefined;
+        //console.log(`[DEBUG] Assigned ${special} to ${shuffledPlayers[playerIndex].name} (${shuffledPlayers[playerIndex].id})`);
         playerIndex++;
       }
     }
@@ -67,25 +82,71 @@ export class AvalonGameLogic {
     for (const special of specialEvil) {
       if (playerIndex < shuffledPlayers.length) {
         playerRoles.set(shuffledPlayers[playerIndex].id, special);
+        // Special characters don't need gender assignment
+        shuffledPlayers[playerIndex].characterSex = undefined;
+        //console.log(`[DEBUG] Assigned ${special} to ${shuffledPlayers[playerIndex].name} (${shuffledPlayers[playerIndex].id})`);
         playerIndex++;
       }
     }
 
-    // Fill remaining good roles
+    // Fill remaining good roles (servants)
+    let firstServantSex: 'm' | 'f' | null = null;
     for (let i = 0; i < remainingGood; i++) {
       if (playerIndex < shuffledPlayers.length) {
         playerRoles.set(shuffledPlayers[playerIndex].id, 'servant');
+
+        if (i === 0) {
+          // First servant: random
+          const randomValue = Math.random();
+          firstServantSex = randomValue < 0.5 ? 'f' : 'm';
+          shuffledPlayers[playerIndex].characterSex = firstServantSex;
+          //console.log(`[DEBUG] Servant ${i+1} (1st): random=${randomValue.toFixed(3)}, assigned=${shuffledPlayers[playerIndex].characterSex} to ${shuffledPlayers[playerIndex].name}`);
+        } else {
+          // Subsequent servants: toggle based on first
+          const toggleSex: 'm' | 'f' = firstServantSex === 'm' ? 'f' : 'm';
+          shuffledPlayers[playerIndex].characterSex = toggleSex;
+          //console.log(`[DEBUG] Servant ${i+1}: toggle to ${shuffledPlayers[playerIndex].characterSex} to ${shuffledPlayers[playerIndex].name}`);
+          firstServantSex = toggleSex; // Update for next toggle
+        }
         playerIndex++;
       }
     }
 
-    // Fill remaining evil roles
+    // Fill remaining evil roles (minions)
+    let firstMinionSex: 'm' | 'f' | null = null;
     for (let i = 0; i < remainingEvil; i++) {
       if (playerIndex < shuffledPlayers.length) {
         playerRoles.set(shuffledPlayers[playerIndex].id, 'minion');
+
+        if (i === 0) {
+          // First minion: random
+          const randomValue = Math.random();
+          firstMinionSex = randomValue < 0.5 ? 'f' : 'm';
+          shuffledPlayers[playerIndex].characterSex = firstMinionSex;
+          //console.log(`[DEBUG] Minion ${i+1} (1st): random=${randomValue.toFixed(3)}, assigned=${shuffledPlayers[playerIndex].characterSex} to ${shuffledPlayers[playerIndex].name}`);
+        } else {
+          // Subsequent minions: toggle based on first
+          const toggleSex: 'm' | 'f' = firstMinionSex === 'm' ? 'f' : 'm';
+          shuffledPlayers[playerIndex].characterSex = toggleSex;
+          //console.log(`[DEBUG] Minion ${i+1}: toggle to ${shuffledPlayers[playerIndex].characterSex} to ${shuffledPlayers[playerIndex].name}`);
+          firstMinionSex = toggleSex; // Update for next toggle
+        }
         playerIndex++;
       }
     }
+
+    console.log(`[DEBUG] Final playerRoles:`, Array.from(playerRoles.entries()));
+
+    // Print summary of role assignments
+    console.log(`\n🎭 AVALON ROLE ASSIGNMENT SUMMARY:`);
+    console.log(`=====================================`);
+    for (const [playerId, role] of playerRoles.entries()) {
+      const player = players.find(p => p.id === playerId);
+      const playerName = player ? player.name : playerId;
+      const genderInfo = player?.characterSex ? ` (${player.characterSex})` : '';
+      console.log(`👤 ${playerName}: ${role.toUpperCase()}${genderInfo}`);
+    }
+    console.log(`=====================================\n`);
 
     return playerRoles;
   }
@@ -129,6 +190,10 @@ export class AvalonGameLogic {
    */
   static getPlayerView(gameState: AvalonState, playerId: string, players: Player[]): any {
     const playerRole = gameState.playerRoles.get(playerId);
+    //console.log(`[DEBUG] getPlayerView for player ${playerId}, role: ${playerRole}`);
+    //console.log(`[DEBUG] playerRoles Map size: ${gameState.playerRoles.size}`);
+    //console.log(`[DEBUG] playerRoles entries:`, Array.from(gameState.playerRoles.entries()));
+
     if (!playerRole) {
       throw new Error(`Player ${playerId} not found in game state`);
     }
@@ -147,17 +212,31 @@ export class AvalonGameLogic {
     // Apply visibility rules to players
     const visiblePlayers = players.map(player => {
       const otherPlayerRole = gameState.playerRoles.get(player.id);
-      if (!otherPlayerRole || player.id === playerId) {
-        return { ...player, specialId: undefined }; // Don't show own role or unknown roles
+      if (!otherPlayerRole) {
+        return { ...player, specialId: undefined, characterSex: undefined }; // Unknown role
+      }
+
+      if (player.id === playerId) {
+        // Show player their own role and sex
+        //console.log(`[DEBUG] Setting own role for ${player.id}: ${otherPlayerRole}`);
+        return { ...player, specialId: otherPlayerRole, characterSex: player.characterSex };
       }
 
       const visibilityRule = AVALON_RULES.visibilityRules[playerRole as keyof typeof AVALON_RULES.visibilityRules];
       if (visibilityRule && visibilityRule.canSee.includes(otherPlayerRole)) {
-        return { ...player, specialId: visibilityRule.appearsAs };
+        //console.log(`[DEBUG] ${player.id} visible to ${playerId} as: ${visibilityRule.appearsAs}`);
+        // Don't show characterSex for other players, only for self
+        return {
+          ...player,
+          specialId: visibilityRule.appearsAs,
+          characterSex: undefined
+        };
       }
 
-      return { ...player, specialId: undefined };
+      return { ...player, specialId: undefined, characterSex: undefined };
     });
+
+    //console.log(`[DEBUG] Final visiblePlayers:`, visiblePlayers.map(p => ({ id: p.id, name: p.name, specialId: p.specialId })));
 
     return {
       ...clientState,
@@ -171,7 +250,7 @@ export class AvalonGameLogic {
   static getVotesView(gameState: AvalonState, players: Player[]): any {
     const connectedPlayers = players.filter(p => p.connected !== false);
     const votedPlayers = gameState.questVotes.size;
-    
+
     if (votedPlayers >= connectedPlayers.length) {
       // Convert Map to object for JSON serialization
       const votesObject: Record<string, boolean> = {};
@@ -180,7 +259,7 @@ export class AvalonGameLogic {
       }
       return { questVotes: votesObject };
     }
-    
+
     return {};
   }
 
@@ -191,7 +270,7 @@ export class AvalonGameLogic {
     if (gameState.questResults.length >= gameState.questTeam.length) {
       return { questResults: [...gameState.questResults] };
     }
-    
+
     return {};
   }
 

@@ -444,7 +444,7 @@ export class GamePartyState {
 				stateChanged = true;
 			}
 
-			// Cleanup orphaned parties - MOST PROBABY REPLACED BY cleanupOrphanedPartyAfter24h BELOW. DO NOT REMOVE THIS!
+			// Cleanup orphaned parties - MOST PROBABLY REPLACED BY cleanupOrphanedPartyAfter24h BELOW. DO NOT REMOVE THIS!
 			// if (this.gameState && !this.gameState.gameStarted && this.gameState.players.length === 0 && this.connections.size === 0) {
 			//   fetch('https://internal/cleanup-party', {
 			//     method: 'POST',
