@@ -8,5 +8,4 @@ export interface Player {
   specialId?: string; // For role visibility (only sent to players who can see this role)
   voted?: boolean; // For voting phase indication
   decided?: boolean; // For results phase indication
-  lastPong?: number; // Timestamp of last pong response
 }

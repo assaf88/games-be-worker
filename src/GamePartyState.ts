@@ -175,7 +175,6 @@ export class GamePartyState {
 						if (p) {
 							p.connected = true;
 							p.disconnectTime = undefined;
-							p.lastPong = Date.now(); // Update last pong timestamp
 						}
 						return;
 					}
@@ -272,73 +271,35 @@ export class GamePartyState {
 
 		const allDisconnected = this.gameState.players.every(p => p.connected === false);
 		const timeSinceLastAccess = Date.now() - this.lastAccess;
-		const twelveHours = 12 * 60 * 60 * 1000;
+		const twentyFourHours = 12 * 60 * 60 * 1000;
 
-		if (allDisconnected && timeSinceLastAccess > twelveHours) {
-			await this.cleanupParty();
-		}
-	}
+		if (allDisconnected && timeSinceLastAccess > twentyFourHours) {
+			// Clear storage and let DO be garbage collected
+			this.state.storage.deleteAll().catch(console.error);
 
-	private async cleanupParty() {
-		// Clear storage and let DO be garbage collected
-		await this.state.storage.deleteAll();
-
-		// Stop ping interval
-		if (this.pingInterval) {
-			clearInterval(this.pingInterval);
-			this.pingInterval = null;
-		}
-
-		// Close all connections
-		for (const [ws, p] of this.connections.entries()) {
-			try {
-				ws.close();
-			} catch {
+			// Stop ping interval
+			if (this.pingInterval) {
+				clearInterval(this.pingInterval);
+				this.pingInterval = null;
 			}
-		}
-		this.connections.clear();
 
-		if (this.gameState?.gameStarted) {
-			await this.dbManager.markGameAsInactive(this.partyId);
-		}
-	}
-
-	private checkGameEndedAndCleanup() {
-		// Check if game has ended (phase === 'end')
-		if (this.gameState?.gameStarted && this.gameState.state && 
-			'phase' in this.gameState.state && this.gameState.state.phase === 'end') {
-			
-			// Schedule cleanup after 5 minutes to allow players to see results
-			setTimeout(async () => {
-				await this.cleanupParty();
-			}, 30 * 60 * 1000); // 30 minutes
-		}
-	}
-
-	private cleanupInactiveConnections() {
-		const now = Date.now();
-		const inactiveTimeout = 10 * 60 * 1000; // 10 minutes
-
-		for (const [ws, player] of this.connections.entries()) {
-			// Check if connection is inactive for too long
-			if (ws.readyState === 1) { // Only check open connections
-				const lastPong = player.lastPong || 0;
-				if (now - lastPong > inactiveTimeout) {
-					try {
-						ws.close();
-					} catch {
-					}
-					this.connections.delete(ws);
+			// Close all connections
+			for (const [ws, p] of this.connections.entries()) {
+				try {
+					ws.close();
+				} catch {
 				}
+			}
+			this.connections.clear();
+
+			if (this.gameState.gameStarted) {
+				await this.dbManager.markGameAsInactive(this.partyId);
 			}
 		}
 	}
 
 	broadcastGameState(options: { gameStarting?: boolean } = {}) {
 		if (!this.gameState) return;
-
-		// Check if game has ended and schedule cleanup
-		this.checkGameEndedAndCleanup();
 
 		// For Avalon game, send player-specific views
 		if (this.gameId === 'avalon' && this.gameState.gameStarted && this.gameState.state && 'phase' in this.gameState.state) {
@@ -353,7 +314,7 @@ export class GamePartyState {
 		}
 
 		const msg = JSON.stringify(state, (key, value) => {
-			if (key === 'tabId' || key === 'lastPong') return undefined;
+			if (key === 'tabId') return undefined;
 			return value;
 		});
 		for (const ws of this.connections.keys()) {
@@ -388,7 +349,7 @@ export class GamePartyState {
 					}
 
 					const msg = JSON.stringify(state, (key, value) => {
-						if (key === 'tabId' || key === 'lastPong') return undefined;
+						if (key === 'tabId') return undefined;
 						return value;
 					});
 
@@ -401,7 +362,7 @@ export class GamePartyState {
 						state.gameStarting = true;
 					}
 					const msg = JSON.stringify(state, (key, value) => {
-						if (key === 'tabId' || key === 'lastPong') return undefined;
+						if (key === 'tabId') return undefined;
 						return value;
 					});
 					ws.send(msg);
@@ -504,10 +465,7 @@ export class GamePartyState {
 
 			// Cleanup orphaned parties after 24 hours of inactivity
 			this.cleanupOrphanedPartyAfter24h().catch(console.error);
-
-			// Cleanup inactive connections
-			this.cleanupInactiveConnections();
-		}, 45000);
+		}, 30000);
 	}
 }
 
