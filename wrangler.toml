@@ -9,14 +9,23 @@ appVersion = "1.6.0"
 enabled = true
 
 [durable_objects]
-bindings = [{ name = "PARTY_STATE", class_name = "GamePartyState" }]
+bindings = [
+	{ name = "PARTY_STATE", class_name = "GamePartyState" },
+	{ name = "TRACKER", class_name = "Tracker" }
+]
 
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["PartyState"]
+
 [[migrations]]
 tag = "v2"
 renamed_classes = [{ from = "PartyState", to = "GamePartyState" }]
+
+# Add the Tracker DO in a new migration
+[[migrations]]
+tag = "v3"
+new_classes = ["Tracker"]
 
 [[d1_databases]]
 binding = "DB"

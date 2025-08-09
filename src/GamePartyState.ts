@@ -69,6 +69,13 @@ export class GamePartyState {
         this.partyId = `${this.gameId}-${this.partyCode}`;
       }
 
+	  const partyId2 = this.partyId;
+	  await this.env.TRACKER.get(this.env.TRACKER.idFromName("tracker"))
+		.fetch("https://internal/ping", {
+			method: "POST",
+			body: JSON.stringify({ partyId2 }),
+		});
+
       if (!this.firstHostId) {
         this.firstHostId = await this.state.storage.get<string>('firstHostId') || null;
       }
