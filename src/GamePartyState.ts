@@ -338,7 +338,11 @@ export class GamePartyState {
 					const state: any = {
 						action: 'update_state',
 						...this.gameState,
-						...playerView,
+						state: {
+							...this.gameState.state,
+							questTeamSize: playerView.questTeamSize
+						},
+						players: playerView.players,
 						...votesView,
 						...resultsView,
 						hostId: this.hostId

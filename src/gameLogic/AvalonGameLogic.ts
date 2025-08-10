@@ -34,6 +34,7 @@ export class AvalonGameLogic {
       questTeam: [],
       questSkips: 0,
       completedQuests: [],
+      questTeamSize: getQuestRequirement(playerCount, 1),
       playerRoles: playerRoles,
       questVotes: new Map(),
       questResults: []
@@ -206,7 +207,8 @@ export class AvalonGameLogic {
       questLeader: gameState.questLeader,
       questTeam: gameState.questTeam,
       questSkips: gameState.questSkips,
-      completedQuests: gameState.completedQuests
+      completedQuests: gameState.completedQuests,
+      questTeamSize: getQuestRequirement(players.length, gameState.questNumber)
     };
 
     // Apply visibility rules to players
@@ -345,6 +347,7 @@ export class AvalonGameLogic {
             questSkips: newSkips,
             phase: 'quest',
             instructionText: this.generateInstruction('quest', nextLeader, gameState.questNumber, players.length, undefined, players),
+            questTeamSize: getQuestRequirement(players.length, gameState.questNumber),
             questVotes: new Map(),
             questResults: []
           },
@@ -472,6 +475,7 @@ export class AvalonGameLogic {
           questSkips: 0, // Reset skips for new quest
           phase: 'quest',
           instructionText: this.generateInstruction('quest', nextLeader, nextQuestNumber, players.length, undefined, players),
+          questTeamSize: getQuestRequirement(players.length, nextQuestNumber),
           questVotes: new Map(),
           questResults: []
         };
