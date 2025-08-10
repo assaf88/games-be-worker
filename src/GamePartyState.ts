@@ -340,7 +340,7 @@ export class GamePartyState {
 						...this.gameState,
 						state: {
 							...this.gameState.state,
-							questTeamSize: playerView.questTeamSize
+							...((this.gameState.state as any).phase === 'quest' ? { questTeamSize: playerView.questTeamSize } : {})
 						},
 						players: playerView.players,
 						...votesView,
