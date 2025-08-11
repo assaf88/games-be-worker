@@ -166,7 +166,7 @@ export class AvalonGameLogic {
 
     switch (phase) {
       case 'quest':
-        return `${leaderName}, choose your team for quest ${questNumber}`;
+        return `${leaderName}, choose your team for quest `;//removed ${questNumber} from the end cause the numeric lancelot font is changed in FE
       case 'voting':
         return `Everybody vote! Approve or reject the quest team`;
       case 'results':
