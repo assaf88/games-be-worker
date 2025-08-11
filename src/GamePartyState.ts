@@ -74,12 +74,6 @@ export class GamePartyState {
 				this.partyId = `${this.gameId}-${this.partyCode}`;
 			}
 
-			const partyId2 = this.partyId;
-			await this.env.TRACKER.get(this.env.TRACKER.idFromName("tracker"))
-				.fetch("https://internal/ping", {
-					method: "POST",
-					body: JSON.stringify({partyId2}),
-				});
 
 			if (!this.firstHostId) {
 				this.firstHostId = await this.state.storage.get<string>('firstHostId') || null;
@@ -327,30 +321,37 @@ export class GamePartyState {
 	private broadcastAvalonGameState(options: { gameStarting?: boolean } = {}) {
 		if (!this.gameState || !this.gameState.state) return;
 
+		// Pre-calculate common data to avoid repeated calculations
+		const votesView = AvalonGameLogic.getVotesView(this.gameState.state as any, this.gameState.players);
+		const resultsView = AvalonGameLogic.getResultsView(this.gameState.state as any);
+		const baseState = {
+			action: 'update_state',
+			gameId: this.gameState.gameId,
+			partyCode: this.gameState.partyCode,
+			gameStarted: this.gameState.gameStarted,
+			hostId: this.hostId,
+			...votesView,
+			...resultsView
+		};
+
+		if (options.gameStarting) {
+			baseState.gameStarting = true;
+		}
+
 		for (const [ws, player] of this.connections.entries()) {
 			if (ws.readyState === 1) {
 				try {
 					// Get player-specific view
 					const playerView = AvalonGameLogic.getPlayerView(this.gameState.state as any, player.id, this.gameState.players);
-					const votesView = AvalonGameLogic.getVotesView(this.gameState.state as any, this.gameState.players);
-					const resultsView = AvalonGameLogic.getResultsView(this.gameState.state as any);
 
 					const state: any = {
-						action: 'update_state',
-						...this.gameState,
+						...baseState,
 						state: {
 							...this.gameState.state,
 							...((this.gameState.state as any).phase === 'quest' ? { questTeamSize: playerView.questTeamSize } : {})
 						},
-						players: playerView.players,
-						...votesView,
-						...resultsView,
-						hostId: this.hostId
+						players: playerView.players
 					};
-
-					if (options.gameStarting) {
-						state.gameStarting = true;
-					}
 
 					const msg = JSON.stringify(state, (key, value) => {
 						if (key === 'tabId') return undefined;
@@ -361,10 +362,7 @@ export class GamePartyState {
 				} catch (error) {
 					console.error(`Error sending player view to ${player.id}:`, error);
 					// Fallback to default broadcast
-					const state: any = {action: 'update_state', ...this.gameState, hostId: this.hostId};
-					if (options.gameStarting) {
-						state.gameStarting = true;
-					}
+					const state: any = { ...baseState, ...this.gameState };
 					const msg = JSON.stringify(state, (key, value) => {
 						if (key === 'tabId') return undefined;
 						return value;
@@ -383,6 +381,10 @@ export class GamePartyState {
 				return;
 			}
 
+			if (this.connections.size === 0) {
+				return;
+			}
+
 			const now = Date.now();
 			let stateChanged = false;
 
@@ -394,11 +396,15 @@ export class GamePartyState {
 				return; // Skip work if no active players and game idle
 			}
 
+			const connectionMap = new Map<string, WebSocket>();
+			for (const [ws, p] of this.connections.entries()) {
+				connectionMap.set(p.id, ws);
+			}
+
 			for (const player of this.gameState.players) {
-				const isConnected = Array.from(this.connections.values()).some(p => p.id === player.id);
+				const isConnected = connectionMap.has(player.id);
 
 				if (!isConnected && player.connected !== false) {
-
 					const gracePeriod = 45000;
 
 					if (!player.disconnectTime || (now - player.disconnectTime) > gracePeriod) {
@@ -407,45 +413,46 @@ export class GamePartyState {
 						stateChanged = true;
 					}
 				} else if (isConnected) {
-					// Send ping to connected player
-					for (const [ws, p] of this.connections.entries()) {
-						if (p.id === player.id) {
-							const serverVersion = this.env.appVersion || '1.3.0';
-							try {
-								ws.send(JSON.stringify({
-									action: 'ping',
-									appVersion: serverVersion
-								}));
-							} catch {
-							}
+					const ws = connectionMap.get(player.id);
+					if (ws) {
+						const serverVersion = this.env.appVersion || '1.3.0';
+						try {
+							ws.send(JSON.stringify({
+								action: 'ping',
+								appVersion: serverVersion
+							}));
+						} catch {
+							// Connection might be closed, remove it
+							this.connections.delete(ws);
 						}
 					}
 				}
 			}
 
 			// Remove players who have been disconnected for 60s (only if game not started)
-			// const now = Date.now();
-			const removedIds: string[] = [];
-			this.gameState.players = this.gameState.players.filter(p => {
-				if (this.gameState?.gameStarted) return true;
-				if (p.connected === false && p.disconnectTime && now - p.disconnectTime > 60000) {
-					removedIds.push(p.id);
-					return false;
-				}
-				return true;
-			});
-
-			if (removedIds.length > 0) {
-				for (const [ws, p] of this.connections.entries()) {
-					if (removedIds.includes(p.id)) {
-						try {
-							ws.close();
-						} catch {
-						}
-						this.connections.delete(ws);
+			if (!this.gameState.gameStarted) {
+				const removedIds: string[] = [];
+				this.gameState.players = this.gameState.players.filter(p => {
+					if (p.connected === false && p.disconnectTime && now - p.disconnectTime > 60000) {
+						removedIds.push(p.id);
+						return false;
 					}
+					return true;
+				});
+
+				if (removedIds.length > 0) {
+					for (const playerId of removedIds) {
+						const ws = connectionMap.get(playerId);
+						if (ws) {
+							try {
+								ws.close();
+							} catch {
+							}
+							this.connections.delete(ws);
+						}
+					}
+					stateChanged = true;
 				}
-				stateChanged = true;
 			}
 
 			// Cleanup orphaned parties - MOST PROBABLY REPLACED BY cleanupOrphanedPartyAfter24h BELOW. DO NOT REMOVE THIS!
@@ -469,7 +476,7 @@ export class GamePartyState {
 
 			// Cleanup orphaned parties after 24 hours of inactivity
 			this.cleanupOrphanedPartyAfter24h().catch(console.error);
-		}, 45000);
+		}, 60000); // Increased from 45s to 60s to reduce CPU usage
 	}
 }
 
