@@ -5,6 +5,24 @@ import { AVALON_RULES, getQuestRequirement, getQuestFailRequirement, getEvilPlay
 export class AvalonGameLogic {
 
   /**
+   * Get quest team sizes array for all 5 quests based on player count
+   */
+  private static getQuestTeamSizes(playerCount: number): number[] {
+    const playerIndex = playerCount - 5; // Convert to 0-based index
+    if (playerIndex < 0 || playerIndex >= 6) {
+      throw new Error(`Invalid player count: ${playerCount}. Must be between 5-10.`);
+    }
+    
+    return [
+      AVALON_RULES.questRequirements[1][playerIndex], // Quest 1
+      AVALON_RULES.questRequirements[2][playerIndex], // Quest 2
+      AVALON_RULES.questRequirements[3][playerIndex], // Quest 3
+      AVALON_RULES.questRequirements[4][playerIndex], // Quest 4
+      AVALON_RULES.questRequirements[5][playerIndex]  // Quest 5
+    ];
+  }
+
+  /**
    * Initialize the game state after start_game action
    */
   static initializeGame(players: Player[], setupState: AvalonSetupState): AvalonState {
@@ -34,7 +52,7 @@ export class AvalonGameLogic {
       questTeam: [],
       questSkips: 0,
       completedQuests: [],
-      questTeamSize: getQuestRequirement(playerCount, 1),
+      questTeamSizes: this.getQuestTeamSizes(playerCount),
       playerRoles: playerRoles,
       questVotes: new Map(),
       questResults: []
@@ -208,7 +226,7 @@ export class AvalonGameLogic {
       questTeam: gameState.questTeam,
       questSkips: gameState.questSkips,
       completedQuests: gameState.completedQuests,
-      questTeamSize: getQuestRequirement(players.length, gameState.questNumber)
+      questTeamSizes: this.getQuestTeamSizes(players.length)
     };
 
     // Apply visibility rules to players
@@ -347,7 +365,7 @@ export class AvalonGameLogic {
             questSkips: newSkips,
             phase: 'quest',
             instructionText: this.generateInstruction('quest', nextLeader, gameState.questNumber, players.length, undefined, players),
-            questTeamSize: getQuestRequirement(players.length, gameState.questNumber),
+            questTeamSizes: this.getQuestTeamSizes(players.length),
             questVotes: new Map(),
             questResults: []
           },
@@ -475,7 +493,7 @@ export class AvalonGameLogic {
           questSkips: 0, // Reset skips for new quest
           phase: 'quest',
           instructionText: this.generateInstruction('quest', nextLeader, nextQuestNumber, players.length, undefined, players),
-          questTeamSize: getQuestRequirement(players.length, nextQuestNumber),
+          questTeamSizes: this.getQuestTeamSizes(players.length),
           questVotes: new Map(),
           questResults: []
         };

@@ -15,7 +15,7 @@ export interface AvalonState extends State {
   phase: 'quest' | 'voting' | 'results' | 'revealing' | 'assassinating' | 'end';
   questNumber: number;
   questLeader: string;
-  questTeamSize: number;
+  questTeamSizes: number[];
   questTeam: string[];
   questSkips: number; // When reaches 5 for this questNumber evil win. resets on the next quest.
   completedQuests: boolean[]; // true is success and false is failed. this is a max 5 array size
