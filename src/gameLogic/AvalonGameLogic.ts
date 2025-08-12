@@ -320,15 +320,18 @@ export class AvalonGameLogic {
     const newVotes = new Map(gameState.questVotes);
     newVotes.set(playerId, vote);
 
-    // Mark voted:true for this player
+    // Mark voted:true for this player only
     let updatedPlayers = players.map(player =>
-      newVotes.has(player.id) ? { ...player, voted: true } : { ...player, voted: false }
+      newVotes.has(player.id) ? { ...player, voted: true } : player
     );
 
     const votedPlayers = newVotes.size;
     if (votedPlayers === players.length) {
-      // All players have voted, clear voted:true for all
-      updatedPlayers = updatedPlayers.map(p => ({ ...p, voted: false }));
+      // All players have voted, remove voted field entirely
+      updatedPlayers = updatedPlayers.map(p => {
+        const { voted, ...playerWithoutVoted } = p;
+        return playerWithoutVoted;
+      });
 
       // Count votes
       let approveVotes = 0;
