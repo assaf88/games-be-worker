@@ -330,7 +330,6 @@ export class GamePartyState {
 			partyCode: this.gameState.partyCode,
 			gameStarted: this.gameState.gameStarted,
 			hostId: this.hostId,
-			...votesView,
 			...resultsView
 		};
 
@@ -348,7 +347,8 @@ export class GamePartyState {
 						...baseState,
 						state: {
 							...this.gameState.state,
-							questTeamSizes: playerView.questTeamSizes
+							questTeamSizes: playerView.questTeamSizes,
+							...votesView
 						},
 						players: playerView.players
 					};
