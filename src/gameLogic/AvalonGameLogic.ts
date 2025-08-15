@@ -7,7 +7,7 @@ export class AvalonGameLogic {
   /**
    * Get quest team sizes array for all 5 quests based on player count
    */
-  private static getQuestTeamSizes(playerCount: number): number[] {
+  static getQuestTeamSizes(playerCount: number): number[] {
     const playerIndex = playerCount - 5; // Convert to 0-based index
     if (playerIndex < 0 || playerIndex >= 6) {
       throw new Error(`Invalid player count: ${playerCount}. Must be between 5-10.`);
@@ -218,16 +218,16 @@ export class AvalonGameLogic {
     }
 
     // Create a copy of the game state without server-only data
-    const clientState = {
-      instructionText: gameState.instructionText,
-      phase: gameState.phase,
-      questNumber: gameState.questNumber,
-      questLeader: gameState.questLeader,
-      questTeam: gameState.questTeam,
-      questSkips: gameState.questSkips,
-      completedQuests: gameState.completedQuests,
-      questTeamSizes: this.getQuestTeamSizes(players.length)
-    };
+    // const clientState = {
+    //   instructionText: gameState.instructionText,
+    //   phase: gameState.phase,
+    //   questNumber: gameState.questNumber,
+    //   questLeader: gameState.questLeader,
+    //   questTeam: gameState.questTeam,
+    //   questSkips: gameState.questSkips,
+    //   completedQuests: gameState.completedQuests,
+    //   questTeamSizes: this.getQuestTeamSizes(players.length)
+    // };
 
     // Apply visibility rules to players
     const visiblePlayers = players.map(player => {
@@ -259,7 +259,7 @@ export class AvalonGameLogic {
     //console.log(`[DEBUG] Final visiblePlayers:`, visiblePlayers.map(p => ({ id: p.id, name: p.name, specialId: p.specialId })));
 
     return {
-      ...clientState,
+      // ...clientState,
       players: visiblePlayers
     };
   }
@@ -287,6 +287,7 @@ export class AvalonGameLogic {
    * Get results view for all players (only when all quest team members have decided)
    */
   static getResultsView(gameState: AvalonState): any {
+    console.log(`[DEBUG] getResultsView called with questResults length: ${gameState.questResults.length} and questTeam length: ${gameState.questTeam.length}`);
     if (gameState.questResults.length >= gameState.questTeam.length) {
       return { questResults: [...gameState.questResults] };
     }
@@ -418,7 +419,7 @@ export class AvalonGameLogic {
         if (result) successCount++;
         else failCount++;
       }
-      const requiredFails = getQuestFailRequirement(gameState.questTeam.length, gameState.questNumber);
+      const requiredFails = getQuestFailRequirement(updatedPlayers.length, gameState.questNumber);
       const questSuccess = failCount < requiredFails;
       // Update completed quests
       const newCompletedQuests = [...gameState.completedQuests];
@@ -444,6 +445,7 @@ export class AvalonGameLogic {
         ...gameState,
         questResults: newResults
       },
+      // newState: gameState,
       updatedPlayers
     };
   }

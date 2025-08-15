@@ -324,18 +324,18 @@ export class GamePartyState {
 		// Pre-calculate common data to avoid repeated calculations
 		const votesView = AvalonGameLogic.getVotesView(this.gameState.state as any, this.gameState.players);
 		const resultsView = AvalonGameLogic.getResultsView(this.gameState.state as any);
+		console.log(`[DEBUG] resultsView:`, resultsView);
+		const questTeamSizes = AvalonGameLogic.getQuestTeamSizes(this.gameState.players.length);
 		const baseState = {
 			action: 'update_state',
 			gameId: this.gameState.gameId,
 			partyCode: this.gameState.partyCode,
 			gameStarted: this.gameState.gameStarted,
 			hostId: this.hostId,
-			...resultsView
+			...(options.gameStarting ? { gameStarting: true } : {})
 		};
 
-		if (options.gameStarting) {
-			baseState.gameStarting = true;
-		}
+		const { questResults, questVotes, ...stateWithoutResults } = this.gameState.state as any; // cause ...votesView & ...resultsView below cannot override if empty
 
 		for (const [ws, player] of this.connections.entries()) {
 			if (ws.readyState === 1) {
@@ -346,9 +346,11 @@ export class GamePartyState {
 					const state: any = {
 						...baseState,
 						state: {
-							...this.gameState.state,
-							questTeamSizes: playerView.questTeamSizes,
-							...votesView
+							...stateWithoutResults,
+							// ...this.gameState.state,
+							...questTeamSizes,
+							...votesView,
+							...resultsView
 						},
 						players: playerView.players
 					};
