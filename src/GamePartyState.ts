@@ -322,10 +322,9 @@ export class GamePartyState {
 		if (!this.gameState || !this.gameState.state) return;
 
 		// Pre-calculate common data to avoid repeated calculations
-		const votesView = AvalonGameLogic.getVotesView(this.gameState.state as any, this.gameState.players);
+		const votesView = AvalonGameLogic.getVotesView(this.gameState.state as any, this.gameState.players.length);
 		const resultsView = AvalonGameLogic.getResultsView(this.gameState.state as any);
 		console.log(`[DEBUG] resultsView:`, resultsView);
-		const questTeamSizes = AvalonGameLogic.getQuestTeamSizes(this.gameState.players.length);
 		const baseState = {
 			action: 'update_state',
 			gameId: this.gameState.gameId,
@@ -347,8 +346,6 @@ export class GamePartyState {
 						...baseState,
 						state: {
 							...stateWithoutResults,
-							// ...this.gameState.state,
-							...questTeamSizes,
 							...votesView,
 							...resultsView
 						},

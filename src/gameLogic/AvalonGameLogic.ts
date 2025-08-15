@@ -267,11 +267,8 @@ export class AvalonGameLogic {
   /**
    * Get votes view for all players (only when all have voted)
    */
-  static getVotesView(gameState: AvalonState, players: Player[]): any {
-    const connectedPlayers = players.filter(p => p.connected !== false);
-    const votedPlayers = gameState.questVotes.size;
-
-    if (votedPlayers >= connectedPlayers.length) {
+  static getVotesView(gameState: AvalonState, playersCount: number): any {
+    if (gameState.questVotes.size >= playersCount) {
       // Convert Map to object for JSON serialization
       const votesObject: Record<string, boolean> = {};
       for (const [playerId, vote] of gameState.questVotes.entries()) {
@@ -287,7 +284,6 @@ export class AvalonGameLogic {
    * Get results view for all players (only when all quest team members have decided)
    */
   static getResultsView(gameState: AvalonState): any {
-    console.log(`[DEBUG] getResultsView called with questResults length: ${gameState.questResults.length} and questTeam length: ${gameState.questTeam.length}`);
     if (gameState.questResults.length >= gameState.questTeam.length) {
       return { questResults: [...gameState.questResults] };
     }
@@ -426,15 +422,19 @@ export class AvalonGameLogic {
       newCompletedQuests[gameState.questNumber - 1] = questSuccess;
       // Randomize quest results for revealing phase
       const shuffledResults = [...newResults].sort(() => Math.random() - 0.5);
-      // Clear decided status for all players
-      const resetPlayers = updatedPlayers.map(p => ({ ...p, decided: false }));
+      // Remove decided field from all players
+      const resetPlayers = updatedPlayers.map(p => {
+        const { decided, ...playerWithoutDecided } = p;
+        return playerWithoutDecided;
+      });
       return {
         newState: {
           ...gameState,
           completedQuests: newCompletedQuests,
           phase: 'revealing',
           instructionText: this.generateInstruction('revealing', gameState.questLeader, gameState.questNumber, gameState.questTeam.length, undefined, players),
-          questResults: shuffledResults
+          questResults: shuffledResults,
+          questVotes: new Map()
         },
         updatedPlayers: resetPlayers
       };

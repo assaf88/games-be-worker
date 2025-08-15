@@ -5,6 +5,8 @@ export interface Player {
   connected?: boolean;
   disconnectTime?: number;
   tabId?: string;
+
+  // Avalon specific fields
   specialId?: string; // For role visibility (only sent to players who can see this role)
   voted?: boolean; // For voting phase indication
   decided?: boolean; // For results phase indication
