@@ -421,7 +421,7 @@ export class AvalonGameLogic {
       const newCompletedQuests = [...gameState.completedQuests];
       newCompletedQuests[gameState.questNumber - 1] = questSuccess;
       // Randomize quest results for revealing phase
-      const shuffledResults = [...newResults].sort(() => Math.random() - 0.5);
+      const shuffledResults = [...newResults].sort((a, b) => (b === true ? 1 : -1) - (a === true ? 1 : -1));
       // Remove decided field from all players
       const resetPlayers = updatedPlayers.map(p => {
         const { decided, ...playerWithoutDecided } = p;
