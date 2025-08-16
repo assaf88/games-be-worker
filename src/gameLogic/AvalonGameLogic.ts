@@ -515,6 +515,7 @@ export class AvalonGameLogic {
     return {
       ...gameState,
       phase: 'end',
+      assassinatedPlayerId: targetPlayerId,
       instructionText: assassinWins ? 'Evil wins! Merlin was assassinated.' : 'Good wins! Merlin survived.'
     };
   }

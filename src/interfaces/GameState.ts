@@ -24,6 +24,9 @@ export interface AvalonState extends State {
   playerRoles: Map<string, string>; // playerId -> role
   questVotes: Map<string, boolean>; // Team approval votes (true for approved, false for rejected)
   questResults: boolean[]; // Success/fail (true for success, false for fail) - relevant for 'results' stage
+  
+  // Optional fields
+  assassinatedPlayerId?: string; // ID of the player assassinated by the assassin
 }
 
 export interface GameState {
