@@ -12,7 +12,7 @@ export class AvalonGameLogic {
     if (playerIndex < 0 || playerIndex >= 6) {
       throw new Error(`Invalid player count: ${playerCount}. Must be between 5-10.`);
     }
-    
+
     return [
       AVALON_RULES.questRequirements[1][playerIndex], // Quest 1
       AVALON_RULES.questRequirements[2][playerIndex], // Quest 2
@@ -474,15 +474,6 @@ export class AvalonGameLogic {
         ...gameState,
         phase: 'end',
         instructionText: 'Evil wins! Three quests failed.'
-      };
-    }
-
-    if (nextQuestNumber > 5) {
-      // Game should have ended by now, but just in case
-      return {
-        ...gameState,
-        phase: 'end',
-        instructionText: 'Game Over!'
       };
     }
 
