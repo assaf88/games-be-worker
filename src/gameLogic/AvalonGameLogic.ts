@@ -486,9 +486,10 @@ export class AvalonGameLogic {
       };
     }
 
-    // Move to next quest
-    const nextLeaderIndex = (gameState.questNumber) % players.length;
-    const nextLeader = players[nextLeaderIndex].id;
+    // Move to next quest - rotate leader based on current leader's position
+    const currentLeaderOrder = players.find(p => p.id === gameState.questLeader)?.order || 1;
+    const nextOrder = (currentLeaderOrder % players.length) + 1;
+    const nextLeader = players.find(p => p.order === nextOrder)?.id || players[0].id;
 
             return {
           ...gameState,
