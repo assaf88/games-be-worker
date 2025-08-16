@@ -194,7 +194,7 @@ export class AvalonGameLogic {
         }
         return `Choose to succeed or fail the quest`;
       case 'revealing':
-        return `Host reveals quest results...`;
+        return `Results of quest no. `;
       case 'assassinating':
         return `Assassin, choose who you think is Merlin`;
       case 'end':
