@@ -324,7 +324,6 @@ export class GamePartyState {
 		// Pre-calculate common data to avoid repeated calculations
 		const votesView = AvalonGameLogic.getVotesView(this.gameState.state as any, this.gameState.players.length);
 		const resultsView = AvalonGameLogic.getResultsView(this.gameState.state as any);
-		console.log(`[DEBUG] resultsView:`, resultsView);
 		const baseState = {
 			action: 'update_state',
 			gameId: this.gameState.gameId,
