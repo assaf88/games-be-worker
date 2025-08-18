@@ -209,25 +209,17 @@ export class AvalonGameLogic {
    */
   static getPlayerView(gameState: AvalonState, playerId: string, players: Player[]): any {
     const playerRole = gameState.playerRoles.get(playerId);
-    //console.log(`[DEBUG] getPlayerView for player ${playerId}, role: ${playerRole}`);
-    //console.log(`[DEBUG] playerRoles Map size: ${gameState.playerRoles.size}`);
-    //console.log(`[DEBUG] playerRoles entries:`, Array.from(gameState.playerRoles.entries()));
 
     if (!playerRole) {
       throw new Error(`Player ${playerId} not found in game state`);
     }
 
-    // Create a copy of the game state without server-only data
-    // const clientState = {
-    //   instructionText: gameState.instructionText,
-    //   phase: gameState.phase,
-    //   questNumber: gameState.questNumber,
-    //   questLeader: gameState.questLeader,
-    //   questTeam: gameState.questTeam,
-    //   questSkips: gameState.questSkips,
-    //   completedQuests: gameState.completedQuests,
-    //   questTeamSizes: this.getQuestTeamSizes(players.length)
-    // };
+
+    if (gameState.phase === 'end') {
+      return {
+        players: players.map(player => ({ ...player, specialId: gameState.playerRoles.get(player.id), characterSex: player.characterSex }))
+      };
+    }
 
     // Apply visibility rules to players
     const visiblePlayers = players.map(player => {
@@ -304,6 +296,7 @@ export class AvalonGameLogic {
     return {
       ...gameState,
       questTeam: selectedPlayers,
+      questVotes: new Map(),
       phase: 'voting',
       instructionText: this.generateInstruction('voting', gameState.questLeader, gameState.questNumber, playerCount, undefined, players)
     };
@@ -361,12 +354,12 @@ export class AvalonGameLogic {
           newState: {
             ...gameState,
             questLeader: nextLeader,
-            questTeam: [],
+            // Keep questTeam and questVotes for frontend display
             questSkips: newSkips,
             phase: 'quest',
             instructionText: this.generateInstruction('quest', nextLeader, gameState.questNumber, players.length, undefined, players),
             questTeamSizes: this.getQuestTeamSizes(players.length),
-            questVotes: new Map(),
+            questVotes: newVotes, // Explicitly keep the votes
             questResults: []
           },
           updatedPlayers
