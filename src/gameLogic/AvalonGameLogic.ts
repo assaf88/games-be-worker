@@ -343,14 +343,14 @@ export class AvalonGameLogic {
         const newSkips = gameState.questSkips + 1;
         if (newSkips >= 5) {
           // Evil wins by quest rejection
+          const instructionText = 'Evil wins! Too many quest rejections.';
+          const { newState, updatedPlayers: endPlayers } = this.handleEnd(gameState, instructionText, updatedPlayers);
           return {
             newState: {
-              ...gameState,
-              phase: 'end',
-              questSkips: newSkips,
-              instructionText: 'Evil wins! Too many quest rejections.'
+              ...newState,
+              questSkips: newSkips
             },
-            updatedPlayers
+            updatedPlayers: endPlayers
           };
         }
         // Quest rejected - move to next leader, same quest
@@ -453,7 +453,7 @@ export class AvalonGameLogic {
   /**
    * Move to next quest or end game
    */
-  static nextQuest(gameState: AvalonState, players: Player[]): AvalonState {
+  static nextQuest(gameState: AvalonState, players: Player[]): { newState: AvalonState, updatedPlayers?: Player[] } {
     const nextQuestNumber = gameState.questNumber + 1;
 
     // Check win conditions
@@ -463,18 +463,17 @@ export class AvalonGameLogic {
     if (successCount >= 3) {
       // Good team wins, move to assassination
       return {
-        ...gameState,
-        phase: 'assassinating',
-        instructionText: this.generateInstruction('assassinating', gameState.questLeader, gameState.questNumber, players.length)
+        newState: {
+          ...gameState,
+          phase: 'assassinating',
+          instructionText: this.generateInstruction('assassinating', gameState.questLeader, gameState.questNumber, players.length)
+        }
       };
     }
 
     if (failCount >= 3) {
-      return {
-        ...gameState,
-        phase: 'end',
-        instructionText: 'Evil wins! Three quests failed.'
-      };
+      const instructionText = 'Evil wins! Three quests failed.';
+      return this.handleEnd(gameState, instructionText, players);
     }
 
     // Move to next quest - rotate leader based on current leader's position
@@ -483,31 +482,60 @@ export class AvalonGameLogic {
     const nextLeader = players.find(p => p.order === nextOrder)?.id || players[0].id;
 
             return {
-          ...gameState,
-          questNumber: nextQuestNumber,
-          questLeader: nextLeader,
-          questTeam: [],
-          questSkips: 0, // Reset skips for new quest
-          phase: 'quest',
-          instructionText: this.generateInstruction('quest', nextLeader, nextQuestNumber, players.length, undefined, players),
-          questTeamSizes: this.getQuestTeamSizes(players.length),
-          questVotes: new Map(),
-          questResults: []
+          newState: {
+            ...gameState,
+            questNumber: nextQuestNumber,
+            questLeader: nextLeader,
+            questTeam: [],
+            questSkips: 0, // Reset skips for new quest
+            phase: 'quest',
+            instructionText: this.generateInstruction('quest', nextLeader, nextQuestNumber, players.length, undefined, players),
+            questTeamSizes: this.getQuestTeamSizes(players.length),
+            questVotes: new Map(),
+            questResults: []
+          }
         };
+  }
+
+  /**
+   * Handle game end - reveal all identities and clean up state
+   */
+  static handleEnd(gameState: AvalonState, instructionText: string, players: Player[]): { newState: AvalonState, updatedPlayers: Player[] } {
+    // Reveal all player identities
+    const updatedPlayers = players.map(player => {
+      const role = gameState.playerRoles.get(player.id);
+      // const isServant = role === 'servant';
+      // const isMinion = role === 'minion';
+
+      return {
+        ...player,
+        specialId: role,
+        // ...(isServant || isMinion ? { characterSex: player.characterSex } : {})
+	  	...(player.characterSex ? { characterSex: player.characterSex } : {})
+      };
+    });
+
+    return {
+      newState: {
+        ...gameState,
+        phase: 'end',
+        instructionText: instructionText,
+        questResults: [],
+        questTeam: [],
+        gameEnding: true
+      },
+      updatedPlayers
+    };
   }
 
   /**
    * Handle assassination attempt
    */
-  static handleAssassination(gameState: AvalonState, targetPlayerId: string): AvalonState {
+  static handleAssassination(gameState: AvalonState, targetPlayerId: string): { newState: AvalonState, updatedPlayers: Player[] } {
     const targetRole = gameState.playerRoles.get(targetPlayerId);
     const assassinWins = targetRole === 'merlin';
+    const instructionText = assassinWins ? 'Evil wins! Merlin was assassinated.' : 'Good wins! Merlin survived.';
 
-    return {
-      ...gameState,
-      phase: 'end',
-      assassinatedPlayerId: targetPlayerId,
-      instructionText: assassinWins ? 'Evil wins! Merlin was assassinated.' : 'Good wins! Merlin survived.'
-    };
+    return this.handleEnd(gameState, instructionText, []);
   }
 }

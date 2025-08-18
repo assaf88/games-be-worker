@@ -27,6 +27,7 @@ export interface AvalonState extends State {
   
   // Optional fields
   assassinatedPlayerId?: string; // ID of the player assassinated by the assassin
+  gameEnding?: boolean; // Indicates the game is ending and identities should be revealed
 }
 
 export interface GameState {

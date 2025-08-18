@@ -119,8 +119,11 @@ export class AvalonGameHandler implements GameHandler {
 
       // Handle host revealing results. FE sends this message once after the host has revealed the results.
       if (data && data.action === 'reveal_results' && gameState.phase === 'revealing' && player.id === partyState.hostId) {
-        const updatedGameState = AvalonGameLogic.nextQuest(gameState, partyState.gameState.players);
-        partyState.gameState.state = updatedGameState;
+        const { newState, updatedPlayers } = AvalonGameLogic.nextQuest(gameState, partyState.gameState.players);
+        partyState.gameState.state = newState;
+        if (updatedPlayers) {
+          partyState.gameState.players = updatedPlayers;
+        }
         partyState.broadcastGameState();
       }
 
@@ -128,8 +131,11 @@ export class AvalonGameHandler implements GameHandler {
       if (data && data.action === 'assassinate' && gameState.phase === 'assassinating') {
         const playerRole = gameState.playerRoles.get(player.id);
         if (playerRole === 'assassin') {
-          const updatedGameState = AvalonGameLogic.handleAssassination(gameState, data.targetPlayerId);
-          partyState.gameState.state = updatedGameState;
+          const { newState, updatedPlayers } = AvalonGameLogic.handleAssassination(gameState, data.targetPlayerId);
+          partyState.gameState.state = newState;
+          if (updatedPlayers) {
+            partyState.gameState.players = updatedPlayers;
+          }
           partyState.broadcastGameState();
         }
       }
