@@ -106,7 +106,8 @@ export class AvalonGameHandler implements GameHandler {
         const { newState, updatedPlayers } = AvalonGameLogic.handleQuestVoteAndCheckComplete(gameState, player.id, data.approve, partyState.gameState.players);
         partyState.gameState.state = newState;
         partyState.gameState.players = updatedPlayers;
-        partyState.broadcastGameState();
+        const isGameEnding = newState.phase === 'end';
+        partyState.broadcastGameState({ gameEnding: isGameEnding });
       }
 
       // Handle quest result submission
@@ -124,7 +125,8 @@ export class AvalonGameHandler implements GameHandler {
         if (updatedPlayers) {
           partyState.gameState.players = updatedPlayers;
         }
-        partyState.broadcastGameState();
+        const isGameEnding = newState.phase === 'end';
+        partyState.broadcastGameState({ gameEnding: isGameEnding });
       }
 
       // Handle assassination attempt
@@ -136,7 +138,7 @@ export class AvalonGameHandler implements GameHandler {
           if (updatedPlayers) {
             partyState.gameState.players = updatedPlayers;
           }
-          partyState.broadcastGameState();
+          partyState.broadcastGameState({ gameEnding: true });
         }
       }
     }

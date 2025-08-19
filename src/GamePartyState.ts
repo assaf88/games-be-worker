@@ -292,7 +292,7 @@ export class GamePartyState {
 		}
 	}
 
-	broadcastGameState(options: { gameStarting?: boolean } = {}) {
+	broadcastGameState(options: { gameStarting?: boolean, gameEnding?: boolean } = {}) {
 		if (!this.gameState) return;
 
 		// For Avalon game, send player-specific views
@@ -318,7 +318,7 @@ export class GamePartyState {
 		}
 	}
 
-	private broadcastAvalonGameState(options: { gameStarting?: boolean } = {}) {
+	private broadcastAvalonGameState(options: { gameStarting?: boolean, gameEnding?: boolean } = {}) {
 		if (!this.gameState || !this.gameState.state) return;
 
 		// Pre-calculate common data to avoid repeated calculations
@@ -346,7 +346,8 @@ export class GamePartyState {
 						state: {
 							...stateWithoutResults,
 							...votesView,
-							...resultsView
+							...resultsView,
+							...(options.gameEnding ? { gameEnding: true } : {})
 						},
 						players: playerView.players
 					};
