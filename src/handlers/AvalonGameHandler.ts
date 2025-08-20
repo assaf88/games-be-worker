@@ -118,8 +118,15 @@ export class AvalonGameHandler implements GameHandler {
         partyState.broadcastGameState();
       }
 
-      // Handle host revealing results. FE sends this message once after the host has revealed the results.
-      if (data && data.action === 'reveal_results' && gameState.phase === 'revealing' && player.id === partyState.hostId) {
+      // Handle revealing results completion. Any client can send this (in case host is away)
+      if (data && data.action === 'reveal_results' && gameState.phase === 'revealing') {
+        // Prevent duplicate processing by checking if we've already moved past revealing
+        if (partyState.revealResultsProcessed) {
+          return; // Already processed, ignore duplicate messages
+        }
+        
+        partyState.revealResultsProcessed = true; // Mark as processed
+        
         const { newState, updatedPlayers } = AvalonGameLogic.nextQuest(gameState, partyState.gameState.players);
         partyState.gameState.state = newState;
         if (updatedPlayers) {
