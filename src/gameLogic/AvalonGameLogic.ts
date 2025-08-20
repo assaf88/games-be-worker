@@ -184,7 +184,11 @@ export class AvalonGameLogic {
 
     switch (phase) {
       case 'quest':
-        return `${leaderName}, choose your team for quest `;//removed ${questNumber} from the end cause the numeric lancelot font is changed in FE
+        const requiredFails = getQuestFailRequirement(playerCount, questNumber);
+        if (requiredFails === 2) {
+          return `${leaderName}, choose your team. At least TWO fail cards required to fail quest `;
+        }
+        return `${leaderName}, choose your team for quest `;
       case 'voting':
         return `Everybody vote! Approve or reject the quest team`;
       case 'results':
