@@ -95,6 +95,7 @@ export class AvalonGameHandler implements GameHandler {
             partyState.gameState.players
           );
           partyState.gameState.state = newGameState;
+          partyState.revealResultsProcessed = false;
           partyState.broadcastGameState();
         } catch (error) {
           console.error('Quest team selection error:', error);
