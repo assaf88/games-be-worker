@@ -370,6 +370,7 @@ export class AvalonGameLogic {
         newState: {
           ...gameState,
           phase: 'results',
+          questSkips: 0,
           instructionText: this.generateInstruction('results', gameState.questLeader, gameState.questNumber, players.length, gameState.questTeam, players),
           questVotes: newVotes
         },
