@@ -108,6 +108,16 @@ export class GamePartyState {
 						this.lastAccess = Date.now(); // Update last access
 						this.cleanupStaleConnections(data.id);
 
+						// If party is full (10 connected players) and this is a new player, reject
+						const playerExists = this.gameState?.players.find(p => p.id === data.id);
+						const connectedPlayersCount = this.gameState?.players.filter(p => 
+							p.connected && p.id !== data.id
+						).length || 0;
+						if (!playerExists && connectedPlayersCount >= 10) {
+							this.sendErrorAndClose(server, 'party_full');
+							return;
+						}
+
 						// Prevent joining if game already started and not in players
 						if (this.gameState?.gameId === 'avalon' && this.gameState.gameStarted &&
 							!this.gameState.players.some(p => p.id === data.id)) {
