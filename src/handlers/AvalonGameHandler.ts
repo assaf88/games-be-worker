@@ -141,7 +141,7 @@ export class AvalonGameHandler implements GameHandler {
       if (data && data.action === 'assassinate' && gameState.phase === 'assassinating') {
         const playerRole = gameState.playerRoles.get(player.id);
         if (playerRole === 'assassin') {
-          const { newState, updatedPlayers } = AvalonGameLogic.handleAssassination(gameState, data.targetPlayerId);
+          const { newState, updatedPlayers } = AvalonGameLogic.handleAssassination(gameState, data.targetPlayerId, partyState.gameState.players);
           partyState.gameState.state = newState;
           if (updatedPlayers) {
             partyState.gameState.players = updatedPlayers;

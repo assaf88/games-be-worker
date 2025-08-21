@@ -529,11 +529,11 @@ export class AvalonGameLogic {
   /**
    * Handle assassination attempt
    */
-  static handleAssassination(gameState: AvalonState, targetPlayerId: string): { newState: AvalonState, updatedPlayers: Player[] } {
+  static handleAssassination(gameState: AvalonState, targetPlayerId: string, players: Player[]): { newState: AvalonState, updatedPlayers: Player[] } {
     const targetRole = gameState.playerRoles.get(targetPlayerId);
     const assassinWins = targetRole === 'merlin';
     const instructionText = assassinWins ? 'Evil wins! Merlin was assassinated.' : 'Good wins! Merlin survived.';
 
-    return this.handleEnd(gameState, instructionText, []);
+    return this.handleEnd(gameState, instructionText, players);
   }
 }
