@@ -534,6 +534,8 @@ export class AvalonGameLogic {
     const assassinWins = targetRole === 'merlin';
     const instructionText = assassinWins ? 'Evil wins! Merlin was assassinated.' : 'Good wins! Merlin survived.';
 
-    return this.handleEnd(gameState, instructionText, players);
+    const { newState, updatedPlayers } = this.handleEnd(gameState, instructionText, players);
+    newState.assassinatedPlayerId = targetPlayerId;
+    return { newState, updatedPlayers };
   }
 }
