@@ -520,7 +520,6 @@ export class AvalonGameLogic {
         instructionText: instructionText,
         questResults: [],
         questTeam: [],
-        gameEnding: true
       },
       updatedPlayers
     };
