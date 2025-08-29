@@ -1,11 +1,11 @@
 import { AvalonGameHandler } from './AvalonGameHandler';
+import { CodenamesGameHandler } from './CodenamesGameHandler';
 import { GameHandler } from './GameHandler';
 
 export class GameHandlerFactory {
   private static gameHandlerMap: Map<string, new () => GameHandler> = new Map([
     ['avalon', AvalonGameHandler],
-    // Future games will be added here:
-    // ['codenames', CodenamesGameHandler],
+    ['codenames', CodenamesGameHandler],
   ]);
 
   static createGameHandler(gameId: string): GameHandler {
